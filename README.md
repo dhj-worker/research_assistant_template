@@ -4,7 +4,7 @@ VS Code Codex extension으로 논문 PDF를 읽고 Markdown 요약 파일을 만
 
 ## 사용법
 
-PDF는 `papers/`에 넣고, 요약 결과는 `summary/`에 저장합니다.
+PDF는 `papers/`에 넣고, 요약 결과는 `summary/`에 저장합니다(`papers/`는 로컬 연동 폴더라 git remote repository에 push되지 않습니다).
 
 새 논문을 정리하려면:
 

@@ -13,7 +13,7 @@
 - 템플릿: `templates/paper_summary.md`
 - 프로젝트 스킬: `skills/paper-notes/`
 
-PDF 파일은 드라이브로 따로 관리하므로 Git에 포함하지 않는다.
+`papers/`는 로컬 연동 폴더라 git remote repository에 push되지 않는다.
 
 ## 프로젝트 Markdown 수식 규칙
 
