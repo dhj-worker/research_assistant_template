@@ -288,3 +288,63 @@ ReconViaGen은 “multi-view reconstruction의 정확한 관측 정합성”과 
 정량 결과는 꽤 설득력 있다. Dora-Bench와 OmniObject3D에서 geometry accuracy와 completeness가 강하고, ablation도 GGC/PVC/RVC의 역할을 단계적으로 뒷받침한다. Robotics 관점에서는 pose-free arbitrary-view object reconstruction과 occluded part completion에 매력이 있지만, diffusion hallucination이 실제 물리 geometry를 보장하지 않는다는 점 때문에 downstream planning에는 uncertainty와 validation을 함께 붙여야 한다.
 
 ## 추가 질문과 답변
+
+### 2026-05-22 18:13 - 3장 방법론 해부
+
+**질문**
+
+방법론을 해부하자. 우선 3장을 차근차근 자세히 설명해주는 게 좋겠어.
+
+**답변**
+
+3장은 ReconViaGen을 `VGGT reconstruction prior`와 `TRELLIS generation prior`의 결합으로 정의한다. 3.1은 문제 입력을 calibration 없는 $N$개 object multi-view image로 두고, VGGT가 camera/depth/point map/tracking feature를 담은 3D-aware feature를 제공하며 TRELLIS가 SS Flow와 SLAT Flow로 complete 3D asset을 생성한다는 전제를 놓는다. 3.2는 VGGT의 explicit output point cloud를 직접 쓰지 않고 feature 자체를 condition으로 쓰는 설계가 핵심이다. Global Geometry Condition은 all-view VGGT feature를 fixed-length token $T_g$로 aggregate해 SS Flow의 coarse structure를 제어하고, Local Per-View Condition은 view별 token $\{T_k\}$를 만들어 SLAT Flow의 fine geometry와 texture alignment를 제어한다. 3.3은 이 조건들을 TRELLIS의 coarse-to-fine generation에 주입한다. SS Flow는 $T_g$와 cross-attention하여 sparse structure를 만들고, SLAT Flow는 각 view condition과 cross-attention한 결과를 MLP weight로 fuse한다. 마지막 RVC는 inference 단계에서만 SLAT를 중간 3D output으로 decode/render한 뒤 input view와의 SSIM, LPIPS, DreamSim loss로 velocity compensation을 계산해 denoising trajectory를 input-consistent한 방향으로 보정한다. 즉 3장의 핵심은 “VGGT feature로 diffusion condition을 만들고, rendering loss로 denoising path를 다시 끌어당기는 구조”다.
+
+### 2026-05-22 18:27 - Original TRELLIS의 condition
+
+**질문**
+
+original TRELLIS에서도 원래 diffusion generator에 condition이 들어갔었나? 만약 들어갔다면, 원래는 무엇이 들어갔었나?
+
+**답변**
+
+그렇다. ReconViaGen 본문 기준으로 original TRELLIS의 SS Flow와 SLAT Flow도 rectified flow transformer이며, 두 stage 모두 DINO-encoded image feature를 condition으로 사용한다. 즉 ReconViaGen의 novelty는 diffusion generator에 condition을 처음 넣은 것이 아니라, 기존의 image-feature condition을 VGGT reconstruction prior 기반 condition으로 바꾼 데 있다. ReconViaGen은 all-view VGGT feature를 aggregate한 Global Geometry Condition $T_g$를 SS Flow에 넣고, view별 VGGT feature에서 만든 Local Per-View Condition $\{T_k\}$를 SLAT Flow에 넣는다. Baseline 설명에 따르면 TRELLIS-S는 denoising step마다 입력 view 하나를 random하게 골라 condition으로 쓰고, TRELLIS-M은 모든 input view로부터 condition된 denoised result를 평균내는 multidiffusion mode를 쓴다. 따라서 기존 TRELLIS condition은 주로 single/multi image의 DINO visual feature이고, ReconViaGen condition은 pose/depth/point map/tracking cue를 암묵적으로 담은 VGGT 3D-aware feature라고 볼 수 있다.
+
+### 2026-05-22 18:46 - Local Per-View Condition이 SLAT Flow로 들어가는 방식
+
+**질문**
+
+Local Per-View Condition에 대한 질문. view별 VGGT feature로부터 얻어지는 token list `T_k`는 어떻게 SLAT Flow로 들어가는가? 모든 SLAT의 active voxelized feature와 cross-attention을 수행하는가, 아니면 view-dependent한 voxel 선정을 거쳐서 cross-attention을 수행하는가? `summary/TRELLIS_Structured 3D Latents for Scalable and Versatile 3D Generation.md`를 참고하여 대답하라.
+
+**답변**
+
+ReconViaGen 본문과 TRELLIS 요약을 함께 보면, $T_k$는 view-dependent active voxel selector라기보다 SLAT Flow의 cross-attention condition memory로 들어간다고 해석하는 것이 맞다. TRELLIS에서 SLAT는 sparse structure stage가 만든 active voxel set 위에 붙은 local latent 집합이며, SLAT Flow는 이 active voxel들의 noisy local latent를 함께 denoise한다. ReconViaGen은 이 구조를 유지하면서 각 SLAT DiT block에서 noisy SLAT representation $y_j$가 각 view condition $T_k$와 cross-attention하게 하고, view별 cross-attention 결과를 MLP가 만든 weight $w_k$로 fuse한다. 식으로는 $y_{j+1}=\sum_{k=1}^{N}\mathrm{CrossAttn}(Q(y_j),K(T_k),V(T_k))\cdot w_k$로 제시된다. 여기서 $y_j$는 noisy SLAT input의 self-attention layer output이며, 논문은 특정 view에서 보이는 voxel만 골라 cross-attention한다고 설명하지 않는다. 따라서 명시된 구조는 모든 active voxelized SLAT tokens가 각 view의 $T_k$를 condition으로 참조하고, network가 attention과 fusion weight를 통해 view별 정보를 선택적으로 사용하는 방식이다. View visibility, projection mask, per-view voxel culling 같은 geometric selection은 RVC의 rendering/pose refinement와는 별개의 단계이며, Local Per-View Condition 식에는 명시되어 있지 않다.
+
+### 2026-05-22 18:50 - RVC와 rendering loss, CFG의 관계
+
+**질문**
+
+Rendering-aware Velocity Compensation에 대한 질문. 이것이 rendering loss와 다른 점은 무엇인가? Classifier-free guidance와 관계가 있는가?
+
+**답변**
+
+RVC는 rendering loss를 사용하지만, 일반적인 rendering loss optimization과 목적지가 다르다. 보통 rendering loss는 network parameter, scene parameter, mesh/NeRF/3DGS parameter를 직접 최적화하는 objective로 쓰인다. 반면 ReconViaGen의 RVC는 학습된 SLAT Flow network의 parameter를 업데이트하지 않고, inference 중 각 denoising step에서 predicted velocity $v_t$를 보정한다. 현재 timestep의 predicted target SLAT를 $\hat{x}_0=x_t-t v_t$로 두고, rendered image와 input image 사이의 $L_{\mathrm{SSIM}}+L_{\mathrm{LPIPS}}+L_{\mathrm{DreamSim}}$ gradient를 이용해 $\Delta v_t=-\frac{1}{t}\frac{\partial L_{\mathrm{RVC}}}{\partial \hat{x}_0}$를 만든 뒤, 다음 update를 $x_{t_{\mathrm{prev}}}=x_t-(t-t_{\mathrm{prev}})(v_t+\lambda\Delta v_t)$로 바꾼다. 즉 rendering loss는 측정 함수이고, RVC는 그 loss gradient를 rectified-flow velocity field에 주입하는 inference-time sampler correction이다. CFG와는 둘 다 inference-time guidance라는 점에서 닮았지만, 정보원과 작동 방식이 다르다. CFG는 conditional/unconditional prediction 차이를 guidance strength로 증폭하는 learned condition guidance이고, ReconViaGen에서는 SS generation CFG 7.5, SLAT generation CFG 3.0을 별도로 사용한다. RVC는 conditional/unconditional branch 차이가 아니라 실제 render-input discrepancy에서 온 gradient를 더하는 external rendering guidance다. 따라서 둘은 대체 관계가 아니라 보완적이며, 실제 pipeline에서는 CFG가 condition token을 따르게 만들고 RVC가 pixel-level render consistency 방향으로 trajectory를 추가 보정한다고 보는 것이 자연스럽다.
+
+### 2026-05-22 18:55 - VGGT fine-tuning 목적과 LoRA 역할
+
+**질문**
+
+VGGT finetuning을 하는 목적은 무엇이며, LoRA의 역할은 무엇인가? LoRA에 대해 간단히 설명해. `summary/VGGT_Visual Geometry Grounded Transformer.md`를 참고하여 대답해.
+
+**답변**
+
+VGGT는 원래 one/few/many view에서 camera parameter, depth map, point map, tracking feature를 한 번에 예측하는 범용 scene-level visual geometry model이다. ReconViaGen은 이 VGGT를 object-centric multi-view reconstruction에 더 잘 맞게 만들기 위해 object-reconstruction dataset에서 fine-tuning한다. 목적은 입력 object view들에 대해 camera/depth/point map이 더 정확해지게 하고, 그 과정에서 얻는 VGGT feature가 TRELLIS condition으로 쓸 만한 object-specific 3D-aware feature가 되도록 하는 것이다. ReconViaGen의 VGGT fine-tuning objective는 camera pose, depth, point map loss를 합친 형태이며, tracking loss는 쓰지 않는다. LoRA는 원래 weight를 통째로 업데이트하지 않고 attention의 qkv projection이나 projector 같은 일부 linear layer에 작은 low-rank update matrix를 덧붙여 학습하는 parameter-efficient fine-tuning 방법이다. ReconViaGen에서 LoRA의 역할은 pre-trained VGGT가 이미 배운 3D geometric prior를 보존하면서 object domain에 필요한 부분만 낮은 rank로 조정하는 것이다. 구현상 rank 64, alpha 128, dropout 0을 사용하고, adapter는 각 attention layer의 qkv mapping layer와 projector에만 붙인다.
+
+### 2026-05-22 19:02 - VGGT fine-tuning loss와 GGC/PVC 목적의 관계
+
+**질문**
+
+방금 답변에 대한 후속 질문. VGGT feature가 object-centric 3D-aware condition으로 더 적합해지게 만들게 하는 목적이면, VGGT finetuing loss에 관련 loss가 들어가야 할 것이다. 실제로 그런가? 하지만 내가 이해하기론, VGGT finetuning 과정에서 VGGT feature를 GGC/PVC로 바꿔 TRELLIS generation을 제어하게 하는 루프를 거치지 않는 것 같다.
+
+**답변**
+
+맞다. ReconViaGen 본문에 드러난 학습 절차 기준으로는 VGGT fine-tuning loss에 GGC/PVC나 TRELLIS generation 결과를 직접 평가하는 loss가 들어가지 않는다. VGGT fine-tuning objective는 $L_{\mathrm{camera}}+L_{\mathrm{depth}}+L_{\mathrm{pmap}}$뿐이며, 이는 object domain에서 camera/depth/point map prediction을 개선하기 위한 supervised reconstruction loss다. 따라서 “VGGT feature가 TRELLIS condition으로 더 적합해진다”는 표현은 직접적인 generation-conditioned optimization이 아니라 간접적인 효과로 이해해야 한다. 더 정확히는 object-domain LoRA fine-tuning으로 VGGT 내부 feature가 object-centric geometry prediction에 더 잘 맞게 되고, 이후 freeze된 VGGT feature를 Condition Net이 $T_g$와 $\{T_k\}$로 변환하며, Condition Net과 TRELLIS DiT가 CFM/generation objective 아래에서 이 feature를 condition으로 사용하는 법을 학습한다. 원문도 SS Flow training에서 VGGT layer를 freeze하고 Condition Net을 DiT와 함께 학습한다고 말한다. 그러므로 VGGT 자체가 “GGC/PVC로 변환되어 generation을 잘 제어하도록” end-to-end로 fine-tuned된 것은 아니며, VGGT는 object geometry prior provider, Condition Net/TRELLIS는 그 prior를 generative condition으로 소비하는 adapter/generator 쪽으로 보는 것이 더 정확하다.
