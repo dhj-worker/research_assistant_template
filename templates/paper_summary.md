@@ -13,6 +13,7 @@
 ## Abstract
 
 Original abstract sentence.
+
 **한국어 번역문.**
 
 ## 목차
@@ -41,13 +42,7 @@ Original abstract sentence.
 
 ### 7. Mathematical background
 
-수식 블록은 VS Code Markdown Preview 호환성을 위해 다음처럼 작성한다.
-
-$$
-\begin{aligned}
-\mathbf{x}_{t+1} &= f(\mathbf{x}_t, \mathbf{u}_t)
-\end{aligned}
-$$
+수식 표기는 루트 `AGENTS.md`의 프로젝트 Markdown 수식 규칙을 따른다.
 
 ### 8. Experiments
 

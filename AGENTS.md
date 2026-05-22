@@ -15,6 +15,22 @@
 
 PDF 파일은 드라이브로 따로 관리하므로 Git에 포함하지 않는다.
 
+## 프로젝트 Markdown 수식 규칙
+
+이 저장소의 모든 Markdown 파일은 같은 수식 표기 규칙을 따른다.
+
+- Inline 수식, 변수, 짧은 표현은 `$...$`로 감싼다. 예: `$x_t$`, `$T_g$`, `$N$`, `$r=0.1$`
+- 수학 변수나 수식에는 code span을 쓰지 않는다. Code span은 파일 경로, 명령어, literal identifier, 코드/텍스트 값에만 사용한다.
+- 중요한 식, 여러 줄 유도, aligned expression, inline으로 읽기 어려운 식은 block math로 작성한다.
+- Block math는 `$$ ... $$`를 사용하고, 여는 `$$`와 닫는 `$$`는 각각 독립된 줄에 둔다.
+- Block math에 `\[ ... \]`는 사용하지 않는다.
+- Inline math에 `\( ... \)`는 사용하지 않는다.
+- `$`와 `\[`를 섞지 않는다.
+- `=`만 단독 줄에 남기지 말고, 필요하면 `aligned`를 사용한다.
+- 수식은 Markdown code block 안에 넣지 않는다.
+- LaTeX backslash는 한 번만 쓴다.
+- 벡터와 행렬은 가능하면 표준 LaTeX 표기, 예를 들어 `\mathbf{x}`와 `\begin{bmatrix} ... \end{bmatrix}`를 사용한다.
+
 ## 작업 규칙
 
 사용자가 다음과 같은 요청을 하면 `paper-notes` 스킬을 사용한다.

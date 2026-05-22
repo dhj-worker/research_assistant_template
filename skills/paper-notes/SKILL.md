@@ -35,6 +35,7 @@ Get-Content -Raw -Encoding UTF8 .\skills\paper-notes\SKILL.md
 - Write the document body primarily in Korean.
 - Preserve English technical terms when they improve precision.
 - Base all claims on the PDF content. Mark unknown information as `확인 필요` instead of guessing.
+- Keep this `SKILL.md`'s instructional prose in English. Use Korean only for literal command triggers, fixed output labels, required placeholders, or exact phrases that should appear in generated notes.
 
 ## PDF Reading Priority
 
@@ -47,6 +48,7 @@ Before reading or parsing a PDF, always check whether extracted text already exi
 - The canonical full-text file is `extracted_text/<stem>/full.txt`.
 - If page-range or table-oriented extraction files are useful, store them in the same folder with descriptive names such as `head_pages_1-3.txt`, `tables_pages_5-8.txt`, or `raw_tables_pages_5-8.txt`.
 - Do not add `extracted_text/` to `.gitignore`; extracted text is allowed to be committed and pushed.
+- If PDF text extraction is performed, commit and push the extracted text files under `extracted_text/<stem>/...` immediately after saving them.
 - If `extracted_text/<stem>/full.txt` exists, use it as the primary paper source instead of re-parsing the PDF. Re-open the PDF only when the cached text is incomplete, corrupted, or insufficient for a specific figure/table.
 - If extracted text does not exist, parse the PDF and save the extracted text into `extracted_text/<stem>/` before writing or updating the summary.
 
@@ -74,10 +76,14 @@ When creating a new summary, make the Markdown file visible early so the user ca
 
 - After the target PDF is confirmed and before doing long analysis, create `summary/<stem>.md` if it does not exist.
 - Start with an empty file or a minimal skeleton using the `Summary Format` headings.
-- Fill the document top-down as information becomes reliable: metadata, abstract, table of contents, then detailed summary sections.
+- As soon as the PDF text cache is available, extract the abstract from the paper source and write the sentence-by-sentence English/Korean abstract translation into the skeleton before doing long-form summary analysis.
+- Do not wait for the full detailed summary before saving the abstract. The user should be able to read the translated abstract while the rest of the summary is still being prepared.
+- Fill the remaining document top-down as information becomes reliable: metadata, table of contents, then detailed summary sections.
 - Save useful partial progress rather than waiting until every section is complete.
 - If a section is still pending, use a short placeholder such as `작성 중` or `확인 필요`, then replace it before the final report.
 - Do not leave the final summary in a partial state unless the user explicitly stops the work or a blocker prevents completion.
+- When a paper summary is complete, commit and push the completed `summary/<stem>.md` and updated `summary/INDEX.md` immediately.
+- Stage only the completed summary and index files for that commit unless the user explicitly asks to include other changes. Do not include unrelated working-tree changes.
 
 ## Papers Index
 
@@ -86,7 +92,8 @@ Maintain an overview file at `summary/INDEX.md` for all PDFs in `papers/`.
 Purpose:
 
 - Show which PDFs already have matching summaries.
-- Provide a fast overview of topic tags and a very short three-line summary.
+- Provide a compact status table with topic tags.
+- Keep longer three-line summaries in a separate table so the status table stays readable.
 - Help choose the next paper and speed up follow-up paper selection.
 
 Recommended structure:
@@ -96,17 +103,36 @@ Recommended structure:
 
 Last updated: YYYY-MM-DD HH:mm
 
-| PDF | Summary | Status | Tags | 3-line summary |
-|---|---|---|---|---|
-| `example.pdf` | `summary/example.md` | summarized | `3D reconstruction`, `robotics` | 1. ...<br>2. ...<br>3. ... |
+## Paper Status
+
+| # | PDF | Summary | Status | Tags |
+|---:|---|---|---|---|
+| 1 | [`example.pdf`](../papers/example.pdf) | [`summary/example.md`](example.md) | summarized | `3D reconstruction`, `robotics` |
+| 2 | [`new-paper.pdf`](../papers/new-paper.pdf) | 없음 | pending | 요약 후 작성 |
+
+## Summaries
+
+| # | PDF | 3-line summary |
+|---:|---|---|
+| 1 | [`example.pdf`](../papers/example.pdf) | 1. ...<br>2. ...<br>3. ... |
+| 2 | [`new-paper.pdf`](../papers/new-paper.pdf) | 요약 전 |
 ```
 
 Rules:
 
 - Include every PDF currently in `papers/`.
+- Keep the same stable `#` index for a PDF across both tables during each index update.
+- Sort PDFs consistently, preferably by filename unless the existing index already uses another clear order.
+- The first table is for selection and status: `#`, `PDF`, `Summary`, `Status`, and `Tags`.
+- The second table is only for `#`, `PDF`, and `3-line summary`.
+- In both tables, the `PDF` cell should be a Markdown link to the file under `papers/`, relative to `summary/INDEX.md`, e.g. [`example.pdf`](../papers/example.pdf).
+- When a summary exists, the `Summary` cell should be a Markdown link to `summary/<stem>.md`, relative to `summary/INDEX.md`, e.g. [`summary/example.md`](example.md).
+- Percent-encode spaces in link targets when needed, while keeping the displayed filename readable.
 - `Status` should be one of `summarized`, `pending`, `in-progress`, or `needs-refresh`.
 - `Summary` should point to `summary/<stem>.md` when it exists; otherwise write `없음`.
-- Tags should be concise topical labels inferred from the title, abstract, and summary when available. If unknown, write `확인 필요`.
+- Tags must be written only after the paper summary is complete, using the full summary and extracted text as context.
+- Do not invent tags from filename or title alone for unsummarized papers. For `pending` papers, write `요약 후 작성`.
+- If a summary exists but is too incomplete to support tags, write `확인 필요` and mark the status as `needs-refresh` when appropriate.
 - The three-line summary should be exactly three short lines when the paper has been read. If the paper has not been read yet, write `요약 전`.
 - Update `summary/INDEX.md` after creating or refreshing a paper summary.
 - When listing unprocessed PDFs for `새 논문 정리`, consult or refresh `summary/INDEX.md` so the user sees summary status and topic context together.
@@ -128,7 +154,7 @@ Also treat these as the same command:
 
 1. List PDF files in `papers/`.
 2. For each PDF, compare its stem with `summary/<stem>.md`.
-3. Refresh or consult `summary/INDEX.md` so the paper list includes summary status, tags, and three-line summaries when available.
+3. Refresh or consult `summary/INDEX.md` so the paper list includes index numbers, summary status, tags for completed summaries, and separate three-line summaries when available.
 4. Build a list of PDFs that do not yet have a matching summary file.
 5. Show that unprocessed list to the user and ask which file to summarize.
 6. Do not automatically summarize every new PDF without asking.
@@ -141,23 +167,24 @@ After the user chooses a PDF, show a short checklist and update it during the wo
 
 Recommended checklist:
 
-- [ ] 대상 PDF 확정
-- [ ] `summary/<stem>.md` 빈 파일 또는 skeleton 생성
-- [ ] 추출 텍스트 캐시 확인
-- [ ] 캐시가 없으면 PDF 텍스트 추출 및 `extracted_text/<stem>/` 저장
-- [ ] title/authors/venue/arXiv/URL 등 메타데이터 확인
-- [ ] 메타데이터를 summary에 먼저 기록
-- [ ] Abstract 문장 단위 추출 및 번역
-- [ ] Abstract를 summary에 기록
-- [ ] 본문 heading 기반 목차 재구성
-- [ ] 목차를 summary에 기록
-- [ ] 방법론, 수식, 알고리즘 흐름 정리
-- [ ] 실험 설정, metric, quantitative result, ablation 확인
-- [ ] contribution, assumption, limitation, failure case 분리
-- [ ] robotics relevance와 deployment implication 작성
-- [ ] `summary/<stem>.md` 상세 요약 완성
-- [ ] `summary/INDEX.md` 업데이트
-- [ ] 변경된 summary 및 extracted text 파일 보고
+- [ ] Confirm the target PDF
+- [ ] Create an empty `summary/<stem>.md` file or summary skeleton
+- [ ] Check the extracted-text cache
+- [ ] If no cache exists, extract PDF text and save it under `extracted_text/<stem>/`
+- [ ] Extract and translate the abstract sentence by sentence
+- [ ] Write the translated abstract to the skeleton immediately after PDF parsing/cache loading
+- [ ] Check metadata such as title, authors, venue, arXiv, and URL
+- [ ] Write metadata to the summary
+- [ ] Reconstruct the table of contents from body headings
+- [ ] Write the table of contents to the summary
+- [ ] Organize the method, equations, and algorithmic flow
+- [ ] Check experiment setup, metrics, quantitative results, and ablations
+- [ ] Separate contributions, assumptions, limitations, and failure cases
+- [ ] Write robotics relevance and deployment implications
+- [ ] Complete the detailed `summary/<stem>.md` summary
+- [ ] Update `summary/INDEX.md`
+- [ ] Commit and push the completed summary and index files
+- [ ] Report the changed summary and extracted-text files
 
 Update the checklist in user-facing progress messages as major stages complete.
 
@@ -205,10 +232,13 @@ Procedure:
 
 1. List all PDFs in `papers/`.
 2. For each PDF, check whether `summary/<stem>.md` exists.
-3. If a summary exists, infer tags and the three-line summary from the summary file first, then from extracted text if needed.
-4. If a summary does not exist, mark status as `pending`; infer only obvious title-level tags when safe, otherwise use `확인 필요`.
-5. Write or update `summary/INDEX.md` following `Papers Index`.
-6. Report the changed index path.
+3. Assign a stable numeric index to each PDF and use the same index in both index tables.
+4. If a summary exists and is complete, infer tags and the three-line summary from the summary file first, then from extracted text if needed.
+5. If a summary exists but is incomplete, mark status as `needs-refresh` or `in-progress`, and write `확인 필요` for tags and three-line summary if needed.
+6. If a summary does not exist, mark status as `pending`; write `요약 후 작성` for tags and `요약 전` for the three-line summary.
+7. Do not infer tags from filename or title alone for unsummarized papers.
+8. Write or update `summary/INDEX.md` following `Papers Index`.
+9. Report the changed index path.
 
 ## Summary Format
 
@@ -233,12 +263,19 @@ In metadata, include PDF filename, title, authors, venue/arXiv, year, DOI/URL, a
 
 Translate the abstract sentence by sentence. Do not summarize it.
 
+Use the original abstract sentences from the PDF as the English source text. Do not paraphrase the English abstract unless the extracted text is corrupted or incomplete, and explicitly mark any such case as `확인 필요`.
+
+Do not insert legal, policy, or assistant-process disclaimers into the generated summary. The summary is a private local research note for the user.
+
 Format each sentence as:
 
 ```markdown
 Original English sentence.
+
 **Korean translation.**
 ```
+
+Put one blank line between the original English sentence and the Korean translation. Put another blank line before the next English sentence.
 
 Keep the English sentence plain. Bold only the Korean translation.
 
@@ -286,33 +323,9 @@ Use headings, bullets, and tables where they improve readability, but do not com
 
 ## Math Rules
 
-Prioritize VS Code Markdown Preview compatibility.
+Follow the project-wide Markdown math rules in the repository root `AGENTS.md`.
 
-- Prefer block math over inline math.
-- Avoid inline LaTeX such as `\( ... \)` or `$...$` in prose because it may fail to render in VS Code Markdown Preview.
-- For simple inline variables or symbols, use code spans, e.g. `x_t`, `T_g`, `N`, `PSNR`.
-- If an inline expression is mathematically meaningful, move it to a block equation instead of keeping it inline.
-- Block math: use `$$ ... $$`.
-- Do not use `\[ ... \]` for block math.
-- Do not mix `$` with `\[`.
-- Put opening and closing `$$` markers on separate lines.
-- Do not leave `=` alone on its own line; use `aligned` when needed.
-- Do not put equations inside Markdown code blocks.
-- Use one LaTeX backslash, not doubled backslashes.
-- Use standard LaTeX notation for vectors and matrices when possible, such as `\mathbf{x}` and `\begin{bmatrix} ... \end{bmatrix}`.
-
-Recommended:
-
-```markdown
-본문에서는 `x_t`처럼 code span으로 짧게 언급한다.
-
-$$
-\begin{aligned}
-\mathbf{c}_{\mathrm{mv}}(\mathbf{x})
-&= \frac{1}{N} \sum_{i=1}^{N} \mathbf{c}_i(\mathbf{x})
-\end{aligned}
-$$
-```
+This skill must not duplicate or override those rules. When writing paper summaries, apply the project rules for inline math, block math, LaTeX notation, and code span usage.
 
 ## Follow-up Q&A
 
