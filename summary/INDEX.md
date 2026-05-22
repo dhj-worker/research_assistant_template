@@ -1,6 +1,6 @@
 # Papers Index
 
-Last updated: 2026-05-22 17:10
+Last updated: 2026-05-22 18:47
 
 ## Paper Status
 
@@ -14,6 +14,7 @@ Last updated: 2026-05-22 17:10
 | 6 | [TRELLIS_Structured 3D Latents for Scalable and Versatile 3D Generation.pdf](../papers/TRELLIS_Structured%203D%20Latents%20for%20Scalable%20and%20Versatile%203D%20Generation.pdf) | [summary/TRELLIS_Structured 3D Latents for Scalable and Versatile 3D Generation.md](TRELLIS_Structured%203D%20Latents%20for%20Scalable%20and%20Versatile%203D%20Generation.md) | summarized | `SLAT`, `text-to-3D`, `image-to-3D`, `rectified flow`, `3D asset generation`, `robotics simulation assets` |
 | 7 | [TRELLIS2_Native and Compact Structured Latents for 3D Generation.pdf](../papers/TRELLIS2_Native%20and%20Compact%20Structured%20Latents%20for%203D%20Generation.pdf) | [summary/TRELLIS2_Native and Compact Structured Latents for 3D Generation.md](TRELLIS2_Native%20and%20Compact%20Structured%20Latents%20for%203D%20Generation.md) | summarized | `O-Voxel`, `native 3D latent`, `PBR material generation`, `sparse compression VAE`, `image-to-3D`, `robotics simulation assets` |
 | 8 | [VGGT-Omega.pdf](../papers/VGGT-Omega.pdf) | 없음 | pending | 요약 필요 |
+| 9 | [VGGT_Visual Geometry Grounded Transformer.pdf](../papers/VGGT_Visual%20Geometry%20Grounded%20Transformer.pdf) | [summary/VGGT_Visual Geometry Grounded Transformer.md](VGGT_Visual%20Geometry%20Grounded%20Transformer.md) | summarized | `visual geometry`, `feed-forward 3D reconstruction`, `camera pose estimation`, `multi-view depth`, `point tracking`, `robotics perception` |
 
 ## Summaries
 
@@ -27,3 +28,4 @@ Last updated: 2026-05-22 17:10
 | 6 | [TRELLIS_Structured 3D Latents for Scalable and Versatile 3D Generation.pdf](../papers/TRELLIS_Structured%203D%20Latents%20for%20Scalable%20and%20Versatile%203D%20Generation.pdf) | 1. TRELLIS는 sparse voxel structure와 DINOv2 기반 local visual feature를 결합한 SLAT latent로 geometry와 appearance를 함께 표현한다.<br>2. Structure generation과 latent generation을 분리한 two-stage rectified flow transformer로 text/image-to-3D asset을 생성하고, Gaussian/Radiance Field/mesh decoder를 선택할 수 있다.<br>3. Toys4k, reconstruction, user study에서 강한 성능을 보이지만 robotics deployment에는 physical validity, scale, PBR material, simulation-ready mesh 검증이 추가로 필요하다. |
 | 7 | [TRELLIS2_Native and Compact Structured Latents for 3D Generation.pdf](../papers/TRELLIS2_Native%20and%20Compact%20Structured%20Latents%20for%203D%20Generation.pdf) | 1. TRELLIS2는 O-Voxel을 통해 open, non-manifold, enclosed surface와 PBR material을 native sparse voxel representation으로 함께 encode한다.<br>2. Sparse Compression VAE는 $16\times$ spatial compression으로 1024급 asset을 약 9.6K token에 압축하고, flow-matching DiT가 structure, geometry, material을 순차 생성한다.<br>3. Reconstruction과 image-to-3D 품질은 강하지만 robotics deployment에는 hole repair, physical validity, scale, contact/material parameter 검증이 추가로 필요하다. |
 | 8 | [VGGT-Omega.pdf](../papers/VGGT-Omega.pdf) | 요약 필요 |
+| 9 | [VGGT_Visual Geometry Grounded Transformer.pdf](../papers/VGGT_Visual%20Geometry%20Grounded%20Transformer.pdf) | 1. VGGT는 하나, 몇 개, 또는 수백 개 view에서 camera pose, depth, point map, point tracking feature를 하나의 feed-forward transformer로 동시에 예측한다.<br>2. DINOv2 tokenization과 alternating frame-wise/global self-attention, multi-task supervision을 결합해 SfM/MVS/point tracking specialist와 optimization-heavy pipeline을 여러 benchmark에서 앞선다.<br>3. Robotics에서는 빠른 geometry/correspondence prior로 유용하지만, metric scale, calibration, temporal consistency, fisheye/wide-FOV, dynamic scene robustness는 별도 검증이 필요하다. |
