@@ -1,0 +1,171 @@
+arXiv:2308.05371v1 [cs.GR] 10 Aug 2023  Flexible Isosurface Extraction for Gradient-Based Mesh Optimization
+
+                                        TIANCHANG SHEN, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        JACOB MUNKBERG, NVIDIA, Sweden
+                                        JON HASSELGREN, NVIDIA, Sweden
+                                        KANGXUE YIN, NVIDIA, Canada
+                                        ZIAN WANG, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        WENZHENG CHEN, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        ZAN GOJCIC, NVIDIA, Switzerland
+                                        SANJA FIDLER, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        NICHOLAS SHARP, NVIDIA, USA
+                                        JUN GAO, NVIDIA, University of Toronto, Vector Institute, Canada
+
+                                        Fig. 1. We introduce FlexiCubes, a high quality isosurface representation specifically designed for gradient-based mesh optimization with respect to geometric,
+                                        visual, or even physical objectives. We present a detailed quality evaluation and demonstrate that FlexiCubes improves the results in a range of applications.
+
+                                        This work considers gradient-based mesh optimization, where we iteratively               We base our extraction scheme on Dual Marching Cubes for improved topo-
+                                        optimize for a 3D surface mesh by representing it as the isosurface of a                 logical properties, and present extensions to optionally generate tetrahedral
+                                        scalar field, an increasingly common paradigm in applications including                  and hierarchically-adaptive meshes. Extensive experiments validate Flexi-
+                                        photogrammetry, generative modeling, and inverse physics. Existing im-                   Cubes on both synthetic benchmarks and real-world applications, showing
+                                        plementations adapt classic isosurface extraction algorithms like Marching               that it offers significant improvements in mesh quality and geometric fidelity.
+                                        Cubes or Dual Contouring; these techniques were designed to extract meshes
+                                        from fixed, known fields, and in the optimization setting they lack the de-              CCS Concepts: · Computing methodologies  Mesh geometry models;
+                                        grees of freedom to represent high-quality feature-preserving meshes, or                 Shape representations; Reconstruction.
+                                        suffer from numerical instabilities. We introduce FlexiCubes, an isosurface
+                                        representation specifically designed for optimizing an unknown mesh with                 Additional Key Words and Phrases: isosurface extraction, gradient-based
+                                        respect to geometric, visual, or even physical objectives. Our main insight is           mesh optimization, photogrammetry, generative models
+                                        to introduce additional carefully-chosen parameters into the representation,
+                                        which allow local flexible adjustments to the extracted mesh geometry and                1 INTRODUCTION
+                                        connectivity. These parameters are updated along with the underlying scalar
+                                        field via automatic differentiation when optimizing for a downstream task.               Surface meshes serve a ubiquitous role in the representation, trans-
+                                                                                                                                 mission, and generation of 3D geometry across fields ranging from
+                                        Authors contributed equally.                                                             computer graphics to robotics. Among many other benefits, surface
+                                                                                                                                 meshes offer concise yet accurate encodings of arbitrary surfaces,
+                                        Authors' addresses: Tianchang Shen, frshen@nvidia.com, NVIDIA, and University            benefit from efficient hardware accelerated rendering, and support
+                                        of Toronto, and Vector Institute, Canada; Jacob Munkberg, NVIDIA, Sweden; Jon            solving equations in physical simulation and geometry processing.
+                                        Hasselgren, NVIDIA, Sweden; Kangxue Yin, NVIDIA, Canada; Zian Wang, NVIDIA,
+                                        and University of Toronto, and Vector Institute, Canada; Wenzheng Chen, NVIDIA, and         However, not all meshes are created equal--the properties above
+                                        University of Toronto, and Vector Institute, Canada; Zan Gojcic, NVIDIA, Switzerland;    are often realized only on a high quality mesh. In fact, meshes which
+                                        Sanja Fidler, NVIDIA, and University of Toronto, and Vector Institute, Canada; Nicholas  have an excessive number of elements, suffer from self-intersections
+                                        Sharp, NVIDIA, USA; Jun Gao, NVIDIA, and University of Toronto, and Vector Institute,    and sliver elements, or poorly capture the underlying geometry,
+                                        Canada.                                                                                  may be entirely unsuitable for downstream tasks. Generating a
+1:2 · Shen et al.
+
+high-quality mesh of a particular shape is therefore very important,                               However, these two properties are inherently in conflict. In-
+but far from trivial and often requires significant manual effort.                              creased flexibility provides more capacity to represent degener-
+                                                                                                ate geometry and self-intersections, which hinder convergence in
+   The recent explosion of algorithmic content creation and genera-                             gradient-based optimization. As a result, existing techniques [Lorensen
+tive 3D modeling tools has led to increased demand for automatic                                and Cline 1987; Remelli et al. 2020; Shen et al. 2021] usually neglect
+mesh generation. Indeed, the task of producing a high-quality mesh,                             one of the two properties (Table 1). For example, the widely-used
+traditionally the domain of skilled technical artists and modelers, is                          Marching Cubes procedure [Lorensen and Cline 1987] is not Flexi-
+increasingly tackled via automatic algorithmic pipelines. These are                             ble, because the vertices always lie along a fixed lattice and hence
+often based on differentiable mesh generation, i.e. parameterizing                              generated meshes can never align with non-axis-aligned sharp fea-
+a space of 3D surface meshes and enabling their optimization for                                tures (Figure 1). Generalized marching techniques can deform the
+various objectives via gradient-based techniques. For example, appli-                           underlying grid [Gao et al. 2020; Shen et al. 2021], but still do not al-
+cations such as inverse rendering [Hasselgren et al. 2022; Munkberg                             low the adjustment of individual vertices, leading to sliver elements
+et al. 2022], structural optimization [Subedi et al. 2020], and genera-                         and imperfect fits. On the other hand, Dual Contouring [Ju et al.
+tive 3D modeling [Gao et al. 2022; Lin et al. 2022] all leverage this                           2002] is popular for its ability to capture sharp features, but lacks
+basic building block. In a perfect world, such applications would                               Grad.; the linear system used to position vertices leads to unstable
+simply perform naïve gradient descent with respect to some mesh                                 and ineffective optimization. Section 2 and Table 1 categorize past
+representation to optimize their desired objectives. However, many                              work in detail.
+obstacles have stood in the way of such a workflow, from the basic
+question of how to optimize over meshes of varying topology, to the                                In this work, we present a new technique called FlexiCubes,
+lack of stability and robustness in existing formulations which lead                            which satisfies both desired properties. Our insight is to adapt a par-
+to irreparably low-quality mesh outputs. In this work, we propose a                             ticular Dual Marching Cubes formulation and introduce additional
+new formulation that brings us closer towards this goal, significantly                          degrees of freedom to flexibly position each extracted vertex within
+improving the ease and quality of differentiable mesh generation in                             its dual cell. We carefully constrain the formulation such that it still
+a variety of downstream tasks.                                                                  produces manifold and watertight meshes that are intersection-free
+                                                                                                in the vast majority of cases, enabling well-behaved differentiation
+   Directly optimizing the vertex positions of a mesh easily falls                              (Grad.) with respect to the underlying mesh.
+victim to degeneracy and local minima unless very careful initializa-
+tion, remeshing, and regularization are used [Liu et al. 2019; Nicolet                             The most important property of this formulation is that gradient-
+et al. 2021; Wang et al. 2018]. As such, a common paradigm is to                                based optimization of meshes succeeds consistently in practice. To
+define and optimize a scalar field or a signed distance function (SDF)                          assess this inherently empirical concern, we devote a significant part
+in space and then extract a triangle mesh approximating the level                               of this work to an extensive evaluation of FlexiCubes on several
+set of that function. The choice of scalar function representation                              downstream tasks. Specifically, we demonstrate that our formulation
+and mesh extraction scheme greatly affects the performance of an                                offers significant benefits for various mesh generation applications,
+overall optimization pipeline. A subtle but significant challenge of                            including inverse rendering, optimizing physical and geometric en-
+extracting a mesh from a scalar field is that the space of possible                             ergies, and generative 3D modeling. The resulting meshes concisely
+generated meshes may be restricted. As we will show later, the                                  capture the desired geometry at low element counts and are easily
+choice of the specific algorithm used to extract the triangle mesh                              optimized via gradient descent. Moreover, we also propose exten-
+directly dictates the properties of the generated shape.                                        sions of FlexiCubes such as adaptively adjusting the resolution of
+                                                                                                the mesh via hierarchical refinement, and automatically tetrahedral-
+   To capture these concerns, we identify two key properties that                               izing the interior of the domain. Benchmarks and experiments show
+a mesh generation procedure should offer to enable easy, efficient,                             the value of this technique compared to past approaches, which we
+and high-quality optimization for downstream tasks:                                             believe will serve as a valuable tool for high-quality mesh generation
+                                                                                                in many application areas.
+    (1) Grad. Differentiation with respect to the mesh is well-
+         defined, and gradient-based optimization converges effec-                              2 RELATED WORK
+         tively in practice.
+                                                                                                In this section, we first provide a broad outline of related work
+    (2) Flexible. Mesh vertices can be individually and locally                                 before continuing with an in-depth analysis of the most relevant
+         adjusted to fit surface features and find a high-quality mesh                          techniques in Section 3.
+         with a small number of elements.
+                                                                                                2.1 Isosurface Extraction
+Table 1. Taxonomy of isosurfacing methods. Grad means gradient-based
+based optimization is effective in practice, and Uniform means the resulting                    Traditional isosurfacing methods extract a polygonal mesh repre-
+tessellations are generally uniform without sliver triangles.                                   senting the level set of a scalar function, a problem that has been
+                                                                                                studied extensively across several fields. Here, we review particu-
+Method                           Grad.  Sharp Features  Uniform  Intersection-Free  2-Manifold  larly relevant work and refer the reader to the excellent survey of
+MC [Lorensen and Cline 1987]                                                                    De Araújo et al. [2015] for a thorough overview. Following De Araújo
+DC [Ju et al. 2002]                                                                             et al. [2015] we divide isosurfacing methods into three categories
+NDC [Chen et al. 2022b]                                                                         and taxonomize the most commonly used ones in Table 1.
+DMC [Nielson 2004] Centroid                                                              
+DMC [Schaefer et al. 2007] QEF                                                           
+Template Mesh [Liu et al. 2019]                                                          
+DMTet [Shen et al. 2021]                                                                 
+                                                                                         
+FlexiCubes
+                                                                         Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:3
+
+   Spatial Decomposition. Methods in the first category obtain the       et al. 2017; Yin et al. 2020; Zhu et al. 2018]. However, they are lim-
+isosurface through spatial decomposition, which divides the space        ited in their ability to generalize to objects with complex topologies.
+into cells like cubes or tetrahedrons and creates polygons within the    To remedy this issue, AtlasNet [Groueix et al. 2018] represents a
+cells that contain the surface [Bloomenthal 1988; Bloomenthal et al.     3D shape as a collection of parametric surface elements, though it
+1997]. Marching Cubes (MC) [Lorensen and Cline 1987] is the most         does not encode a coherent surface. Mesh R-CNN [Gkioxari et al.
+representative method in this category. As originally presented,         2019] first predicts a coarse structure which is then refined to a
+Marching Cubes suffers from topological ambiguities and struggles        surface mesh. Such a two-stage approach can generate meshes with
+to represent sharp features. Subsequent work improves the look-up        different topologies, but since the second stage still relies on mesh
+table which assigns polygon types to cubes [Chernyaev 1995; Hege         deformation, topological errors from the first stage can not be rec-
+et al. 1997; Lewiner et al. 2003; Montani et al. 1994; Nielson 2003;     tified. PolyGen [Nash et al. 2020] autogressively generates mesh
+Scopigno 1994] or divides cubes into tetrahedra [Bloomenthal 1994]       vertices and edges, but they are limited in requiring 3D ground truth
+and uses the similar Marching Tetrahedra [Doi and Koide 1991] to         data. CvxNet [Deng et al. 2019] and BSPNet [Chen et al. 2020] seek
+extract the isosurface. To better capture sharp features, Dual Con-      to use convex decomposition of the shape or binary planes for space
+touring (DC) [Ju et al. 2002] moved to a dual representation where       partitioning, however extending them for various objectives defined
+mesh vertices are extracted per-cell, and proposed to estimate vertex    on the meshes is non-trivial.
+position according to the local isosurface details. Dual Contouring
+was extended to adaptive meshing [Azernikov and Fischer 2005]               More recently, many works explore differentiable mesh recon-
+and can output tetrahedral meshes. Another improved approach is          struction schemes, which extract an isosurface from an implicit
+Dual Marching Cubes (DMC) [Nielson 2004], which leverages the            function, often encoded via convolutional networks or implicit neu-
+benefits from both Marching Cubes and Dual Contouring. Recently,         ral fields. Deep Marching Cubes [Liao et al. 2018] computes the
+Neural Marching Cubes [Chen and Zhang 2021] and Neural Dual              expectation over possible topologies within a cube, which scales
+Contouring (NDC) [Chen et al. 2022b] propose a data-driven ap-           poorly with increasing grid resolution. MeshSDF [Remelli et al.
+proach to position the extracted mesh as a function of input field.      2020] proposes a specialized scheme for sampling gradients through
+Despite much progress in extraction from known scalar fields, ap-        mesh extraction, while Mehta et al. [2022] carefully formulates level
+plying isosurfacing methods to gradient-based mesh optimization          set evolution in the neural context. DefTet [Gao et al. 2020] predicts
+remains challenging.                                                     a deformable tetrahedral grid to represent 3D objects. Most similar
+                                                                         to our method is DMTet [Shen et al. 2021], which utilizes a differen-
+   Surface Tracking. Methods in the second category utilize surface      tiable Marching Tetrahedra layer to extract the mesh. An in-depth
+tracking and exploit the neighboring information between surface         analysis of DMTet is provided in Section 3.
+samples to extract the isosurface. Marching Triangles [Hilton et al.
+1996, 1997], one of the first representative methods, iteratively tri-   3 BACKGROUND AND MOTIVATION
+angulates the surface from an initial point under a Delaunay con-
+straint. Following works aim to incorporate adaptivity [Akkouche         Here, we first discuss common existing isosurface extraction schemes,
+and Galin 2001; Karkanis and Stewart 2001] or alignment to sharp         to understand their shortcomings and motivate our proposed ap-
+features [McCormick and Fisher 2002]. However, gradient-based            proach in Section 4.
+mesh optimization in the framework of surface tracking would re-
+quire differentiating through the discrete, iterative update process,       Problem Statement. As outlined in Section 1, we seek a representa-
+which is a non-trivial endeavor.                                         tion for differentiable mesh optimization, where the basic pipeline is
+                                                                         to: i) define a scalar signed-distance function in space, ii) extract its
+   Shrink Wrapping. The methods from the third category rely on          0-isosurface as a triangle mesh, iii) evaluate objective functions on
+shrinking a spherical mesh [Van Overveld and Wyvill 2004], or            that mesh, and iv) back-propagate gradients to the underlying scalar
+inflating critical points [Stander and Hart 1995] to match the iso-      function. Several popular algorithms in widespread use for isosur-
+surface. By default, these methods apply only in limited topological     face extraction still have significant issues in this differentiable set-
+cases and require manual selection of critical points [Bottino et al.    ting. The main challenge is that the effectiveness of gradient-based
+1996] to support arbitrary topology. Moreover, the differentiation       optimization depends dramatically on the particular mechanism for
+through the shrinking process is also not straightforward and hence      isosurface extraction: restrictive parameterizations, numerically un-
+these methods are not well suited for gradient-based optimization.       stable expressions, and topological obstructions all lead to failures
+                                                                         and artifacts when used in gradient-based optimization.
+2.2 Gradient-Based Mesh Optimization in ML
+                                                                            We emphasize that our FlexiCubes representation is not intended
+With recent advances in machine learning (ML), several works ex-         for isosurface extraction from fixed, known scalar fields, the primary
+plore generating 3D meshes with neural networks, whose parame-           case considered in past work. Instead, we particularly consider
+ters are optimized via gradient-based optimization under some loss       differentiable mesh optimization, where the underlying scalar field
+function. Early approaches seek to predefine the topology of the gen-    is an unknown and extraction is performed many times during
+erated shape, such as a sphere [Chen et al. 2019b; Hanocka et al. 2020;  gradient-based optimization. This setting offers new challenges and
+Kato et al. 2018; Wang et al. 2018], a union of primitives [Paschalidou  motivates a specialized approach.
+et al. 2021; Tulsiani et al. 2017] or a set of segmented parts [Sung
+                                                                            Notation. All methods we consider extract an isosurface from a
+                                                                         scalar function  : R3  R, sampled at the vertices of a regular grid
+

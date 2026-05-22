@@ -1,0 +1,1575 @@
+arXiv:2308.05371v1 [cs.GR] 10 Aug 2023  Flexible Isosurface Extraction for Gradient-Based Mesh Optimization
+
+                                        TIANCHANG SHEN, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        JACOB MUNKBERG, NVIDIA, Sweden
+                                        JON HASSELGREN, NVIDIA, Sweden
+                                        KANGXUE YIN, NVIDIA, Canada
+                                        ZIAN WANG, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        WENZHENG CHEN, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        ZAN GOJCIC, NVIDIA, Switzerland
+                                        SANJA FIDLER, NVIDIA, University of Toronto, Vector Institute, Canada
+                                        NICHOLAS SHARP, NVIDIA, USA
+                                        JUN GAO, NVIDIA, University of Toronto, Vector Institute, Canada
+
+                                        Fig. 1. We introduce FlexiCubes, a high quality isosurface representation specifically designed for gradient-based mesh optimization with respect to geometric,
+                                        visual, or even physical objectives. We present a detailed quality evaluation and demonstrate that FlexiCubes improves the results in a range of applications.
+
+                                        This work considers gradient-based mesh optimization, where we iteratively               We base our extraction scheme on Dual Marching Cubes for improved topo-
+                                        optimize for a 3D surface mesh by representing it as the isosurface of a                 logical properties, and present extensions to optionally generate tetrahedral
+                                        scalar field, an increasingly common paradigm in applications including                  and hierarchically-adaptive meshes. Extensive experiments validate Flexi-
+                                        photogrammetry, generative modeling, and inverse physics. Existing im-                   Cubes on both synthetic benchmarks and real-world applications, showing
+                                        plementations adapt classic isosurface extraction algorithms like Marching               that it offers significant improvements in mesh quality and geometric fidelity.
+                                        Cubes or Dual Contouring; these techniques were designed to extract meshes
+                                        from fixed, known fields, and in the optimization setting they lack the de-              CCS Concepts: · Computing methodologies  Mesh geometry models;
+                                        grees of freedom to represent high-quality feature-preserving meshes, or                 Shape representations; Reconstruction.
+                                        suffer from numerical instabilities. We introduce FlexiCubes, an isosurface
+                                        representation specifically designed for optimizing an unknown mesh with                 Additional Key Words and Phrases: isosurface extraction, gradient-based
+                                        respect to geometric, visual, or even physical objectives. Our main insight is           mesh optimization, photogrammetry, generative models
+                                        to introduce additional carefully-chosen parameters into the representation,
+                                        which allow local flexible adjustments to the extracted mesh geometry and                1 INTRODUCTION
+                                        connectivity. These parameters are updated along with the underlying scalar
+                                        field via automatic differentiation when optimizing for a downstream task.               Surface meshes serve a ubiquitous role in the representation, trans-
+                                                                                                                                 mission, and generation of 3D geometry across fields ranging from
+                                        Authors contributed equally.                                                             computer graphics to robotics. Among many other benefits, surface
+                                                                                                                                 meshes offer concise yet accurate encodings of arbitrary surfaces,
+                                        Authors' addresses: Tianchang Shen, frshen@nvidia.com, NVIDIA, and University            benefit from efficient hardware accelerated rendering, and support
+                                        of Toronto, and Vector Institute, Canada; Jacob Munkberg, NVIDIA, Sweden; Jon            solving equations in physical simulation and geometry processing.
+                                        Hasselgren, NVIDIA, Sweden; Kangxue Yin, NVIDIA, Canada; Zian Wang, NVIDIA,
+                                        and University of Toronto, and Vector Institute, Canada; Wenzheng Chen, NVIDIA, and         However, not all meshes are created equal--the properties above
+                                        University of Toronto, and Vector Institute, Canada; Zan Gojcic, NVIDIA, Switzerland;    are often realized only on a high quality mesh. In fact, meshes which
+                                        Sanja Fidler, NVIDIA, and University of Toronto, and Vector Institute, Canada; Nicholas  have an excessive number of elements, suffer from self-intersections
+                                        Sharp, NVIDIA, USA; Jun Gao, NVIDIA, and University of Toronto, and Vector Institute,    and sliver elements, or poorly capture the underlying geometry,
+                                        Canada.                                                                                  may be entirely unsuitable for downstream tasks. Generating a
+1:2 · Shen et al.
+
+high-quality mesh of a particular shape is therefore very important,                               However, these two properties are inherently in conflict. In-
+but far from trivial and often requires significant manual effort.                              creased flexibility provides more capacity to represent degener-
+                                                                                                ate geometry and self-intersections, which hinder convergence in
+   The recent explosion of algorithmic content creation and genera-                             gradient-based optimization. As a result, existing techniques [Lorensen
+tive 3D modeling tools has led to increased demand for automatic                                and Cline 1987; Remelli et al. 2020; Shen et al. 2021] usually neglect
+mesh generation. Indeed, the task of producing a high-quality mesh,                             one of the two properties (Table 1). For example, the widely-used
+traditionally the domain of skilled technical artists and modelers, is                          Marching Cubes procedure [Lorensen and Cline 1987] is not Flexi-
+increasingly tackled via automatic algorithmic pipelines. These are                             ble, because the vertices always lie along a fixed lattice and hence
+often based on differentiable mesh generation, i.e. parameterizing                              generated meshes can never align with non-axis-aligned sharp fea-
+a space of 3D surface meshes and enabling their optimization for                                tures (Figure 1). Generalized marching techniques can deform the
+various objectives via gradient-based techniques. For example, appli-                           underlying grid [Gao et al. 2020; Shen et al. 2021], but still do not al-
+cations such as inverse rendering [Hasselgren et al. 2022; Munkberg                             low the adjustment of individual vertices, leading to sliver elements
+et al. 2022], structural optimization [Subedi et al. 2020], and genera-                         and imperfect fits. On the other hand, Dual Contouring [Ju et al.
+tive 3D modeling [Gao et al. 2022; Lin et al. 2022] all leverage this                           2002] is popular for its ability to capture sharp features, but lacks
+basic building block. In a perfect world, such applications would                               Grad.; the linear system used to position vertices leads to unstable
+simply perform naïve gradient descent with respect to some mesh                                 and ineffective optimization. Section 2 and Table 1 categorize past
+representation to optimize their desired objectives. However, many                              work in detail.
+obstacles have stood in the way of such a workflow, from the basic
+question of how to optimize over meshes of varying topology, to the                                In this work, we present a new technique called FlexiCubes,
+lack of stability and robustness in existing formulations which lead                            which satisfies both desired properties. Our insight is to adapt a par-
+to irreparably low-quality mesh outputs. In this work, we propose a                             ticular Dual Marching Cubes formulation and introduce additional
+new formulation that brings us closer towards this goal, significantly                          degrees of freedom to flexibly position each extracted vertex within
+improving the ease and quality of differentiable mesh generation in                             its dual cell. We carefully constrain the formulation such that it still
+a variety of downstream tasks.                                                                  produces manifold and watertight meshes that are intersection-free
+                                                                                                in the vast majority of cases, enabling well-behaved differentiation
+   Directly optimizing the vertex positions of a mesh easily falls                              (Grad.) with respect to the underlying mesh.
+victim to degeneracy and local minima unless very careful initializa-
+tion, remeshing, and regularization are used [Liu et al. 2019; Nicolet                             The most important property of this formulation is that gradient-
+et al. 2021; Wang et al. 2018]. As such, a common paradigm is to                                based optimization of meshes succeeds consistently in practice. To
+define and optimize a scalar field or a signed distance function (SDF)                          assess this inherently empirical concern, we devote a significant part
+in space and then extract a triangle mesh approximating the level                               of this work to an extensive evaluation of FlexiCubes on several
+set of that function. The choice of scalar function representation                              downstream tasks. Specifically, we demonstrate that our formulation
+and mesh extraction scheme greatly affects the performance of an                                offers significant benefits for various mesh generation applications,
+overall optimization pipeline. A subtle but significant challenge of                            including inverse rendering, optimizing physical and geometric en-
+extracting a mesh from a scalar field is that the space of possible                             ergies, and generative 3D modeling. The resulting meshes concisely
+generated meshes may be restricted. As we will show later, the                                  capture the desired geometry at low element counts and are easily
+choice of the specific algorithm used to extract the triangle mesh                              optimized via gradient descent. Moreover, we also propose exten-
+directly dictates the properties of the generated shape.                                        sions of FlexiCubes such as adaptively adjusting the resolution of
+                                                                                                the mesh via hierarchical refinement, and automatically tetrahedral-
+   To capture these concerns, we identify two key properties that                               izing the interior of the domain. Benchmarks and experiments show
+a mesh generation procedure should offer to enable easy, efficient,                             the value of this technique compared to past approaches, which we
+and high-quality optimization for downstream tasks:                                             believe will serve as a valuable tool for high-quality mesh generation
+                                                                                                in many application areas.
+    (1) Grad. Differentiation with respect to the mesh is well-
+         defined, and gradient-based optimization converges effec-                              2 RELATED WORK
+         tively in practice.
+                                                                                                In this section, we first provide a broad outline of related work
+    (2) Flexible. Mesh vertices can be individually and locally                                 before continuing with an in-depth analysis of the most relevant
+         adjusted to fit surface features and find a high-quality mesh                          techniques in Section 3.
+         with a small number of elements.
+                                                                                                2.1 Isosurface Extraction
+Table 1. Taxonomy of isosurfacing methods. Grad means gradient-based
+based optimization is effective in practice, and Uniform means the resulting                    Traditional isosurfacing methods extract a polygonal mesh repre-
+tessellations are generally uniform without sliver triangles.                                   senting the level set of a scalar function, a problem that has been
+                                                                                                studied extensively across several fields. Here, we review particu-
+Method                           Grad.  Sharp Features  Uniform  Intersection-Free  2-Manifold  larly relevant work and refer the reader to the excellent survey of
+MC [Lorensen and Cline 1987]                                                                    De Araújo et al. [2015] for a thorough overview. Following De Araújo
+DC [Ju et al. 2002]                                                                             et al. [2015] we divide isosurfacing methods into three categories
+NDC [Chen et al. 2022b]                                                                         and taxonomize the most commonly used ones in Table 1.
+DMC [Nielson 2004] Centroid                                                              
+DMC [Schaefer et al. 2007] QEF                                                           
+Template Mesh [Liu et al. 2019]                                                          
+DMTet [Shen et al. 2021]                                                                 
+                                                                                         
+FlexiCubes
+                                                                         Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:3
+
+   Spatial Decomposition. Methods in the first category obtain the       et al. 2017; Yin et al. 2020; Zhu et al. 2018]. However, they are lim-
+isosurface through spatial decomposition, which divides the space        ited in their ability to generalize to objects with complex topologies.
+into cells like cubes or tetrahedrons and creates polygons within the    To remedy this issue, AtlasNet [Groueix et al. 2018] represents a
+cells that contain the surface [Bloomenthal 1988; Bloomenthal et al.     3D shape as a collection of parametric surface elements, though it
+1997]. Marching Cubes (MC) [Lorensen and Cline 1987] is the most         does not encode a coherent surface. Mesh R-CNN [Gkioxari et al.
+representative method in this category. As originally presented,         2019] first predicts a coarse structure which is then refined to a
+Marching Cubes suffers from topological ambiguities and struggles        surface mesh. Such a two-stage approach can generate meshes with
+to represent sharp features. Subsequent work improves the look-up        different topologies, but since the second stage still relies on mesh
+table which assigns polygon types to cubes [Chernyaev 1995; Hege         deformation, topological errors from the first stage can not be rec-
+et al. 1997; Lewiner et al. 2003; Montani et al. 1994; Nielson 2003;     tified. PolyGen [Nash et al. 2020] autogressively generates mesh
+Scopigno 1994] or divides cubes into tetrahedra [Bloomenthal 1994]       vertices and edges, but they are limited in requiring 3D ground truth
+and uses the similar Marching Tetrahedra [Doi and Koide 1991] to         data. CvxNet [Deng et al. 2019] and BSPNet [Chen et al. 2020] seek
+extract the isosurface. To better capture sharp features, Dual Con-      to use convex decomposition of the shape or binary planes for space
+touring (DC) [Ju et al. 2002] moved to a dual representation where       partitioning, however extending them for various objectives defined
+mesh vertices are extracted per-cell, and proposed to estimate vertex    on the meshes is non-trivial.
+position according to the local isosurface details. Dual Contouring
+was extended to adaptive meshing [Azernikov and Fischer 2005]               More recently, many works explore differentiable mesh recon-
+and can output tetrahedral meshes. Another improved approach is          struction schemes, which extract an isosurface from an implicit
+Dual Marching Cubes (DMC) [Nielson 2004], which leverages the            function, often encoded via convolutional networks or implicit neu-
+benefits from both Marching Cubes and Dual Contouring. Recently,         ral fields. Deep Marching Cubes [Liao et al. 2018] computes the
+Neural Marching Cubes [Chen and Zhang 2021] and Neural Dual              expectation over possible topologies within a cube, which scales
+Contouring (NDC) [Chen et al. 2022b] propose a data-driven ap-           poorly with increasing grid resolution. MeshSDF [Remelli et al.
+proach to position the extracted mesh as a function of input field.      2020] proposes a specialized scheme for sampling gradients through
+Despite much progress in extraction from known scalar fields, ap-        mesh extraction, while Mehta et al. [2022] carefully formulates level
+plying isosurfacing methods to gradient-based mesh optimization          set evolution in the neural context. DefTet [Gao et al. 2020] predicts
+remains challenging.                                                     a deformable tetrahedral grid to represent 3D objects. Most similar
+                                                                         to our method is DMTet [Shen et al. 2021], which utilizes a differen-
+   Surface Tracking. Methods in the second category utilize surface      tiable Marching Tetrahedra layer to extract the mesh. An in-depth
+tracking and exploit the neighboring information between surface         analysis of DMTet is provided in Section 3.
+samples to extract the isosurface. Marching Triangles [Hilton et al.
+1996, 1997], one of the first representative methods, iteratively tri-   3 BACKGROUND AND MOTIVATION
+angulates the surface from an initial point under a Delaunay con-
+straint. Following works aim to incorporate adaptivity [Akkouche         Here, we first discuss common existing isosurface extraction schemes,
+and Galin 2001; Karkanis and Stewart 2001] or alignment to sharp         to understand their shortcomings and motivate our proposed ap-
+features [McCormick and Fisher 2002]. However, gradient-based            proach in Section 4.
+mesh optimization in the framework of surface tracking would re-
+quire differentiating through the discrete, iterative update process,       Problem Statement. As outlined in Section 1, we seek a representa-
+which is a non-trivial endeavor.                                         tion for differentiable mesh optimization, where the basic pipeline is
+                                                                         to: i) define a scalar signed-distance function in space, ii) extract its
+   Shrink Wrapping. The methods from the third category rely on          0-isosurface as a triangle mesh, iii) evaluate objective functions on
+shrinking a spherical mesh [Van Overveld and Wyvill 2004], or            that mesh, and iv) back-propagate gradients to the underlying scalar
+inflating critical points [Stander and Hart 1995] to match the iso-      function. Several popular algorithms in widespread use for isosur-
+surface. By default, these methods apply only in limited topological     face extraction still have significant issues in this differentiable set-
+cases and require manual selection of critical points [Bottino et al.    ting. The main challenge is that the effectiveness of gradient-based
+1996] to support arbitrary topology. Moreover, the differentiation       optimization depends dramatically on the particular mechanism for
+through the shrinking process is also not straightforward and hence      isosurface extraction: restrictive parameterizations, numerically un-
+these methods are not well suited for gradient-based optimization.       stable expressions, and topological obstructions all lead to failures
+                                                                         and artifacts when used in gradient-based optimization.
+2.2 Gradient-Based Mesh Optimization in ML
+                                                                            We emphasize that our FlexiCubes representation is not intended
+With recent advances in machine learning (ML), several works ex-         for isosurface extraction from fixed, known scalar fields, the primary
+plore generating 3D meshes with neural networks, whose parame-           case considered in past work. Instead, we particularly consider
+ters are optimized via gradient-based optimization under some loss       differentiable mesh optimization, where the underlying scalar field
+function. Early approaches seek to predefine the topology of the gen-    is an unknown and extraction is performed many times during
+erated shape, such as a sphere [Chen et al. 2019b; Hanocka et al. 2020;  gradient-based optimization. This setting offers new challenges and
+Kato et al. 2018; Wang et al. 2018], a union of primitives [Paschalidou  motivates a specialized approach.
+et al. 2021; Tulsiani et al. 2017] or a set of segmented parts [Sung
+                                                                            Notation. All methods we consider extract an isosurface from a
+                                                                         scalar function  : R3  R, sampled at the vertices of a regular grid
+1:4 · Shen et al.
+
+and interpolated within each cell. The function  may be discretized       +                ++               +      +            +  +       +
+directly as values at grid vertices, or evaluated from an underly-
+ing neural network, etc., the exact parameterization of  makes no                                                     Centroid
+difference for isosurface extraction. For clarity, the set  denotes
+the vertices of the grid with cells , while  = ( ,  ) denotes the         +                -+               -+                  -+         -
+resulting extracted mesh with vertices  and faces  . We implicitly
+overload    or    to refer to either a logical vertex, or that               Original QEF      Constrained            Biased          FC
+vertex's position in space e.g.   R3.
+                                                                          Fig. 2. Grad. Issue in DC. Left: When solving a quadratic error function
+3.1 Marching Cubes & Tetrahedra                                           (QEF) the resulting vertex is not guaranteed to be inside the cube. This
+                                                                          leads to discrepancies between the geometry and the topological cases. In
+The most direct approach is to extract a mesh with vertices on the        addition, there exists a singularity in QEF when the normals are coplanar.
+grid lattice, and one or more mesh faces within each grid cell, as        While there exist techniques to improve the stability of DC - constraining
+in Marching Cubes [Lorensen and Cline 1987], Marching Tetrahe-            the solution space of QEF or biasing the QEF with regularization loss, they
+dra [Doi and Koide 1991], and many generalizations. Mesh vertices         are not readily adaptable in optimization settings. The former (Second)
+are extracted along grid edges where the linearly-interpolated scalar     zeros out the gradient in certain directions. The latter (Third) is hard to tune
+function changes sign                                                     and having a strong regularization will downgrade the advantage of DC in
+                                                                          flexibility. Our version (Fourth), FlexiCubes provides additional degrees
+                     =    ·   ( )  -  ·  ()     (1)                       of freedom, such that the dual vertex can be placed anywhere within the
+                              ( )  -  ()                                  green triangle for this particular configuration.
+
+                                             .
+
+Liao et al. [2018]; Remelli et al. [2020] observe that this expression       MC                                DC                     DMC
+contains a singularity when  () =  ( ), which might obstruct
+differential optimization, although Shen et al. [2021] note that Equa-    Fig. 3. Comparison between MC, DC and DMC. MC fails to capture
+tion 1 is never evaluated under the singular condition during ex-         sharp features. DC captures sharp features but can produce non-manifold
+traction. The resulting mesh is always self-intersection-free and         vertices in some cases. DMC do not introduce non-manifold vertices, but
+manifold.                                                                 has less freedom than DC in representing sharp features.
+
+   However, the mesh vertices resulting from marching extraction             Dual Contouring excels at fitting sharp features when extracting
+can only lie along a sparse lattice of grid edges, by construction. This  a single mesh from a fixed scalar function, but several properties
+prevents the mesh from fitting to sharp features, and unavoidably         impede its use in differential optimization. Most importantly, Equa-
+creates poor-quality sliver triangles when the isosurface passes          tion 2 does not guarantee that the extracted vertex lies inside the
+near a vertex. Recent methods propose schemes beyond naive auto-          grid cell. In fact, co-planar gradient vectors  ( ) create degener-
+differentiation to compute improved gradients on the underlying           ate configurations in which the vertex explodes to a distant location,
+scalar field [Mehta et al. 2022; Remelli et al. 2020], but this does not  leading to self-intersections and numerically unstable optimization
+address the restricted output space for the mesh.                         when differentiating through the formulation. Explicitly constrain-
+                                                                          ing the vertex to lie in the cell zeros out the gradient, and regulariz-
+   A promising remedy is to allow the underlying grid vertices to de-     ing Equation 2 enough to resolve the issue removes the ability to
+form [Gao et al. 2020; Shen et al. 2021]. Although this generalization    fit sharp features (Figure 2 & 4). Additionally, the resulting mesh
+significantly improves performance, the extracted mesh vertices           connectivity may be nonmanifold, and the output mesh contains
+are still not able to move independently, leading to star-shaped          non-planar quadrilaterals which introduce error as they are split in
+skinny triangle artifacts as mesh vertices cluster around a degree of     to triangles (Figure 3).
+freedom on the grid. Our method takes inspiration from Shen et al.
+[2021] and also leverages grid deformation, but augments the repre-          Recent generalizations [Chen et al. 2022b] of Dual Contouring
+sentation with additional degrees of freedom to allow independent         replace Equation 2 with a learned neural network, improving ex-
+repositioning of the vertices, as shown in Figure 4.                      traction quality from imperfect but fixed scalar functions. However,
+                                                                          when optimizing with respect to the underlying function, differenti-
+3.2 Dual Contouring                                                       ating through an additional neural network further complicates the
+                                                                          optimization landscape and impedes convergence (Figure 4).
+As the name suggests, Dual Contouring (DC) [Ju et al. 2002] moves
+to a dual representation, extracting mesh vertices that can be gen-          Our approach takes inspiration from these methods and the im-
+erally positioned within grid cells to better capture sharp geometric     portance of positioning each vertex freely within a cell. However,
+features. The position of each mesh vertex is computed by minimiz-        rather than explicitly positioning the extracted vertex as a function
+ing a local quadratic error function (QEF) depending on the local
+values and spatial gradients of the scalar function 
+
+                             
+
+ = argmin                       ( ) · ( -  ).   (2)
+
+                        Z
+
+where   Z are the zero-crossings of the linearly-interpolated
+scalar function along the cell edges.
+                                                                              Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:5
+
+                                                    0  50  100  200  1000     sharp features. In the subsequent text, whenever we refer to Dual
+                                                                              Marching Cubes we mean the centroid approach, unless otherwise
+FlexiCubes DMTet NDC DCcentroid DCreg1 DCreg001 MC                            clarified.
+
+                                                                                 Our approach builds on Dual Marching Cube extraction, but
+                                                                              we introduce additional parameters for positioning vertices which
+                                                                              generalize the centroid approach. Basing our method off a scheme
+                                                                              which can emit correct topology even in difficult configurations is
+                                                                              one key to our success.
+
+                                                    0  50  100  200  1000     4 METHOD
+
+Fig. 4. Comparison of different isosurfacing methods for mesh op-             We propose the FlexiCubes representation for differentiable mesh
+timization. Starting from a sphere initialization, we optimize the shapes     optimization. The core of the method is a scalar function on a grid,
+towards the ground truth mesh using a set of isosurfacing methods. DMTet      from which we extract a triangle mesh via Dual Marching Cubes.
+reconstructs sharp features but produces many sliver triangles. MC [Nielson   Our main contribution is to introduce three additional sets of param-
+2003] fails to capture sharp features, NDC [Chen et al. 2022b] diverges dur-  eters, carefully chosen to add flexibility to the mesh representation
+ing optimization, DC [Ju et al. 2002] converges with strong regularization,   while retaining robustness and ease of optimization:
+but suffer from artifacts, and FlexiCubes generates a high quality mesh
+with details retained. More details about this experiment are provided in        · Interpolation weights   R8>0,   R1>20 per grid cell, to
+the Supplement.                                                                     position dual vertices in space (Section 4.2).
+
+                                                                                 · Splitting weights   R>0 per grid cell, to control how quadri-
+                                                                                    laterals are split into triangles (Section 4.3).
+
+                                                                                 · Deformation vectors   R3 per vertex of the underlying
+                                                                                    grid for spatial alignment, as in Shen et al. [2021] (Section 4.4).
+
+                                                                              These parameters are optimized along with the scalar function 
+                                                                              via auto-differentiation to fit a mesh to the desired objective. We
+                                                                              also present extensions of the FlexiCubes representation to ex-
+                                                                              tract a tetrahedral mesh of the volume (Section 4.5) and represent
+                                                                              hierarchical meshes with adaptive resolution (Section 4.6).
+
+solely of a scalar field, we introduce additional carefully-chosen            4.1 Dual Marching Cubes Mesh Extraction
+degrees of freedom which are optimized to locally adjust the vertex
+position. We are able to resolve manifoldness by instead basing our           We begin by extracting the connectivity of the Dual Marching Cubes
+scheme on the similar but lesser-known Dual Marching Cubes.                   mesh based on the value of the scalar function  () at each grid
+                                                                              vertex , just as in Nielson [2004]; Schaefer et al. [2007]. The signs
+3.3 Dual Marching Cubes                                                       of  () at cube corners determine the connectivity and adjacency
+                                                                              relationships (Figure 7). Unlike ordinary Marching Cubes, which
+Much like Dual Contouring, Dual Marching Cubes [Nielson 2004]                 extracts vertices along grid edges, Dual Marching Cubes extracts
+extracts vertices positioned within grid cells. However, rather than          a vertex for each primal face in the cell; typically a single vertex,
+extracting a mesh along the dual connectivity of the grid, it extracts        but possibly up to four (Figure 7, case C13). Extracted vertices in
+a mesh along the dual connectivity of the mesh that would be ex-              adjacent cells are linked by edges to form the dual mesh, composed
+tracted by Marching Cubes. This allows for manifold mesh outputs              of quadrilateral faces (Figure 5). The resulting mesh is guaranteed
+for all configurations, by emitting multiple mesh vertices within             to be manifold, although due to the additional degrees of freedom
+a single grid cell when needed. The extracted vertex locations are            described below, it may rarely contain self-intersections; see Sec-
+defined either as the minimizer of a QEF akin to Dual Contour-                tion 7.2.
+ing [Schaefer et al. 2007], or as a geometric function of the primal
+mesh geometry [Nielson 2004], such as the face centroid.                      4.2 Flexible Dual Vertex Positioning
+
+   In general, Dual Marching Cubes improves the connectivity of               Our method generalizes ordinary Dual Marching Cubes in how the
+the extracted mesh vs. Dual Contouring, but if a QEF is used for
+vertex positioning, it suffers from many of the same drawbacks as             extracted mesh vertex locations are computed. Recall that Marching
+Dual Contouring. If vertices are positioned at the centroids of the
+primal mesh, then the formulation lacks the freedom to fit individual         Cubes primal vertices are located at scalar zero-crossings along grid
+
+                                                                              cell edges
+
+                                                                                            =    ·  ( )  -  ·  ()                     (3)
+                                                                                                   ( )                 ,
+                                                                                          
+                                                                                                         -  ()
+
+                                                                              and ordinary Dual Marching Cubes then defines the location of each
+
+                                                                              extracted vertex to be the centroid of its primal face
+
+                                                                                                 1 
+                                                                                             = | |   ,                                (4)
+1:6 · Shen et al.
+
+                                                                           Centroid                                  GT Surface
+
+Fig. 5. Dual Marching Cubes first interpolate vertex along the edge to     Ours
+obtain  . The dual vertex  is computed via Equation 4. We connect four
+neighboring dual vertices to obtain a quadrilateral.
+
+where  is the set of crossings which are the primal face vertices.
+
+   To introduce additional flexibility into this representation, we        Fig. 6. Formulation of determining the position of dual vertex. The dual
+                                                                           vertex in our formulation can be placed anywhere within the green region.
+first define a set of weights in each grid cell   R8>0 associating
+a positive scalar with each cube corner. These weights adjust the
+
+location of the crossing point  along each edge, and Equation 3
+
+then becomes
+
+                     =   ( )    -  (  )    .  (5)                                    C0   C1         C2         C3   C4
+                           ( )  -  (  ) 
+
+In our implementation, we apply a tanh(·) + 1 activation function                    C5   C6         C7         C8   C9
+to restrict   [0, 2], and do not observe any convergence problems
+                                                                                     C10  C11        C12        C13  C14
+due to degeneracy.
+
+   Likewise, rather than naively positioning the dual vertex at the
+
+centroid of the primal face, we introduce a set of weights in each cell
+  R1>20, associating a positive scalar with each cube edge. These
+weights adjust the location of the dual vertex inside each face, and
+
+Equation 4 then becomes
+
+                        1       
+
+                    =              .          (6)
+
+                            
+
+In practice, we again apply a tanh(·) + 1 activation to restrict the                 C15  C16        C17        C18  C19
+range of , similar to .
+                                                                                     C20  C21        C22
+   Together these weights   R8>0,  R1>20 amount to 20 scalars per
+grid cell. In both cases, weights are defined independently per cell,      Fig. 7. All configurations for the Dual Marching Cubes surface, with rotation
+not shared at adjacent corners or edges; independent weights offer         symmetric cases removed. Each colored polygon is a primal face, in which a
+more flexibility, and there is no continuity condition to maintain at      single dual vertex is extracted as output. Marked vertices indicate negative
+adjacent elements in our dual setting.                                     signed distance values,  ( ) < 0, and unmarked vertices indicate positive
+                                                                           values. Figure adapted from Nielson [2004].
+   Notice that both Equation 5 & 6 are intentionally parameterized
+as convex combinations, and thus the resulting extracted vertex                                1          2
+position is necessarily within the convex hull of its grid cell vertices.
+Furthermore, when a convex cell emits multiple dual vertices (Fig-                                           3
+ure 7), the corresponding primal faces in which the dual vertices
+are positioned are non-intersecting, which prevents nearly all self-
+intersections in the resulting mesh (see Section 7 and Supplement).
+
+                                                                                                  4                       >
+
+                                                                                                                     13      24
+
+4.3 Flexible Quad Splitting                                                Fig. 8. Left: FlexiCubes generates non-planar quadrangles, which may need
+                                                                           to be triangulated e.g. for rendering. Note that in this example, there is a
+Dual Marching Cubes, and thus also FlexiCubes, extracts pure
+quadrilateral meshes with non-planar faces, which are typically            clearly favourable triangulation, naturally aligning with the curvature of
+split to triangles for processing in downstream applications. Simply       the reference surface. Middle: During optimization we use a differentiable
+splitting along an arbitrary diagonal can lead to significant artifacts    strategy to select triangulation by tessellating each quad into four triangles
+in curved regions (Figure 8), and there is in general no single ideal      with an interpolated midpoint. Right: During inference we tessellate each
+policy to split non-planar quads to represent unknown geometry.            quad into two triangles along the dominant diagonal.
+Our next parameter is introduced to make the choice of split flexible,
+and optimize it as a continuous degree of freedom.
+                                                                               Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:7
+
+DMC Centroid +flex vertex  +grid deform +flex quad split
+
+Fig. 9. Ablating the effect of parameters in FlexiCubes. Adding flexible       Fig. 10. We extend FlexiCubes to generate a tetrahedral mesh by dividing
+dual vertex positioning, the mesh edges align much better with the sharp       the interior volume illustrated left. Example outputs are shown right.
+geometric features, which are further improved with grid deformation. With
+flexible quad splitting, FlexiCubes split the quadrangles along the diagonals
+that align with the features.
+
+   We define a weight   R>0 in each grid cell, which is propagated
+to the emitted vertices in the extracted mesh. At optimization-time
+only, each quadrilateral mesh face is split into 4 triangles by inserting
+a midpoint vertex  (Figure 8). The location of this midpoint is
+computed as
+
+         (1  + 3 )/2       +          (2  + 4 )/2                              Cracks  Non-manifold Surface
+
+     13                       2    4          
+
+  =            13          + 24                    (7)
+
+with notation is as in Figure 8. This is a weighted combination of             Fig. 11. If the sign of the SDF is inconsistent on the face shared by cubes
+                                                                               at different levels (highlighted in red), it leads to cracks or non-manifold
+the midpoints of the two possible diagonals of the face, where the             surfaces. Two such cases are shown here. As such, we restrict the SDF of
+                                                                               these vertices (in orange) to be consistent with the face of the larger cube.
+weights come from the  parameters on the corresponding vertices.
+
+Intuitively, adjusting the  weights smoothly interpolates between
+
+the geometries resulting from the two possible splits. Optimizing              connecting two grid vertices with different signs, two four-sided
+                                                                               pyramids are generated, each formed by one grid vertex and a vertex
+encourages the choice of split which fits the objective of interest.           from each adjacent cell. These pyramids are then split at the base
+                                                                               as in Section 4.3 to yield two tetrahedra each. When working with
+For final extraction when optimization is complete, we do not insert           Dual Marching Cubes connectivity, there is an additional complexity
+                                                                               that a cell may contain multiple extracted mesh vertices, and we
+the midpoint vertex  , but simply split each quadrilateral along               must choose the correct vertex when forming tetrahedra. In most
+                                                                               cases, this choice can be read-off unambiguously from Figure 7;
+whichever diagonal has larger product of  values.                              although rare difficult deformed configurations lead to small mesh
+                                                                               defects­we detail these in the Supplement, and find that they do not
+4.4 Flexible Grid Deformation                                                  obstruct downstream applications. The resulting meshes are visual-
+                                                                               ized in Figure 10, right, and Figure 24 demonstrates an application
+Inspired by DefTet [Gao et al. 2020] and DMTet [Shen et al. 2021],             of differentiable physical simulation.
+we furthermore allow the vertices of the underlying grid to deform
+according to displacements   R3 at each grid vertex. These de-                 4.6 Adaptive Mesh Resolution
+formations allow the grid to locally align with thin features, and
+give additional flexibility in positioning vertices. We limit the defor-       We also augment FlexiCubes to leverage adapative hierarchical
+mation to at most half of the grid spacing to ensure that grid cells           grids, and represent meshes which variably increased spatial resolu-
+never invert.                                                                  tion in areas of high geometric detail. The policy of where to refine
+                                                                               the octree grid representation is application-specific, e.g. thresholds
+4.5 Tetrahedral Mesh Extraction                                                on local curvature in geometric fitting or visual error in inverse
+                                                                               rendering; our representation is responsible for extracting hierar-
+Many applications such as physical simulation and character anima-             chically adaptive meshes while maintaining the key properties of
+tion require a tetrahedralization of the shape volume. We augment              flexibility and effective gradient-based optimization. Here we again
+FlexiCubes to additionally output a tetrahedral mesh when desired,             mimic approaches designed for Dual Contouring [Ju et al. 2002;
+which exactly conforms to the boundary of the extracted surface                Schaefer et al. 2007], adapting them to our FlexiCubes extension of
+and supports automatic differentiation in the same sense as our                Dual Marching Cubes.
+surface extraction.
+                                                                                  The approach is to locally refine our background grid into a hi-
+   Our approach adapts the strategy proposed by Liang and Zhang                erarchical octree with varying resolution. Most of our algorithm
+[2014] for Dual Contouring. The vertex set for the tetrahedral mesh            applies unchanged on an octree, except for the challenge of con-
+is the union of the grid vertices, our extracted mesh vertices in              necting adjacent dual vertices to form quadrilateral meshes faces
+cells, and the midpoint of any cell for which no surface vertex was
+extracted. We then emit tetrahedra as shown in Figure 10, left. For
+each grid edge connecting two grid vertices with the same sign,
+four tetrahedra are generated, each formed by the two grid vertices
+and two vertices in consecutive adjacent cells. For each grid edge
+1:8 · Shen et al.
+
+                                                                            Table 2. Quantitative results on Mesh Reconstruction. We report the follow-
+                                                                            ing metrics: IN> 5: normal angle difference > 5, CD: Chamfer Distance,
+                                                                            F1: F1 score, ECD: Edge Chamfer Distance, EF1: Edge F1 Score. #V: number
+
+                                                                            of vertices, #F: number of faces.
+
+                                                                            323         IN>5(%)   CD(10-5)  F1  ECD (10-2)  EF1  #V #T
+                                                                                           85.60
+                                                                                           74.43  22.65 0.28      5.56  0.08 2387 4771
+                                                                                           72.60
+                                                                                           66.61  17.15 0.38      4.82  0.11 2360 4775
+                                                                                           66.22
+                                                                                           61.21  17.61 0.42      3.55  0.13 1877 3801
+                                                                            MC
+                             Without Constraint With Constraint             DMTet(32)      50.52  9.11      0.54  2.60  0.13 2573 5146
+                                                                            DMTet(40)
+Fig. 12. Cracks and non-manifold vertices produced by running FlexiCubes    FlexiCubes  IN>5(%)   11.56 0.52      3.64  0.17 1691 3387
+with an octree representation can be largely resolved by enforcing the      643            80.67
+constraint on SDF of minimal vertices. For the unconstrained version there                 63.34  8.35      0.58  3.64  0.20 2626 5259
+are 318 non-manifold vertices in the resulting mesh, and with constraints                  55.22
+there is only a single non-manifold vertex remaining.                                      52.37  7.01 0.64       2.11  0.26 2400 4800
+                                                                                           50.20
+                                                                                           48.66  CD(10-5)  F1  ECD (10-2)  EF1  #V #T
+                                                                            MC
+                                                                            DMTet(64)     34.87   6.84  0.55      2.55  0.14 9881 19783
+                                                                            DMTet(80)
+                                                                            FlexiCubes  IN>5(%)   5.90  0.61      3.80  0.23 9828 19769
+                                                                            1283           77.23
+                                                                                           53.98  6.16  0.57      1.22  0.26 9828 19769
+                                                                                           43.20
+                                                                                           42.56  6.33  0.66      1.25  0.25 10459 20801
+                                                                                           48.86
+                                                                                                  7.50  0.66      3.77  0.28 6783 13566
+                                                                            MC            30.57
+                                                                            DMTet(128)            5.17  0.66      3.59  0.29 10385 20784
+                                                                            FlexiCubes
+                                                                                                  4.87 0.70       0.71  0.43 9916 19843
+
+when they span different levels of the octree. On a general octree                                CD(10-5)  F1  ECD (10-2)  EF1  #V #T
+there may not exist any dual face connectivity which yields a closed
+manifold mesh (Figure 11); existing methods mitigate this problem                                 4.72  0.68      1.13  0.33 40164 80374
+by constraining the topology of the octree or signs of the implicit
+function [Ju et al. 2002; Schaefer et al. 2007]. However, these rules                             4.59  0.69      3.82  0.40 40128 80360
+are not applicable in an optimization setting, where the topology is
+unknown and constantly changing. We adopt the approach shown                                      5.04  0.65      0.79  0.43 40129 80361
+in Figure 12; refined octree grid vertices adjacent to coarser cells
+always take their value as the interpolated value from coarse face                                4.51  0.72      1.32  0.44 38645 77212
+vertices, guaranteeing consistency of signs. This projection yields
+nearly watertight adaptive meshes in our experiments. Here again                                  4.98  0.74      1.50  0.39 23535 47001
+the combination of all possible configurations from Figure 7 at adja-
+cent octree nodes of different hierarchies leaves a small number of                               4.31 0.71       0.42  0.51 38923 77845
+cases where the extracted mesh contains a hole. Nonetheless, the
+adaptively refined mesh yields significant improvements, as shown           edge crossings which bound the primal face for dual vertex . This
+in Figure 14.                                                               term regularizes the extracted connectivity, and encourages vertices
+                                                                            to lie near the center of their cell so they have a margin in which to
+4.7 Regularizers                                                            flex and adapt.
+
+Our method is a general-purpose tool, which can be optimized ac-               The second term discourages spurious geometry in regions of the
+                                                                            shape which receive no supervision in the application objective, such
+                                                                            as internal cavities. We follow Munkberg et al. [2022] and penalize
+                                                                            sign changes of the implicit function on all grid edges. First, we let
+                                                                            Eì be the set of all pairs of scalar function values (,  ) at grid
+                                                                            vertices (, ) connected by an edge and with ()  ( ).
+                                                                            Then the loss is given by
+
+                                                                                                  
+
+cording to application-specific objectives and regularizers, including                  Lsign :=              (), sign( )) ,            (9)
+
+geometric depth and SDF losses, image-space rendering losses, and                                 (, )  Eì
+
+mesh-quality regularizers. In the next section, we will detail several      where  ,  are cross-entropy and sigmoid functions respectively.
+
+examples utilizing such terms. Here, we first propose two regulariza-
+
+tion terms which are specific to the internals of our representation.       5 EXPERIMENTS
+
+Our over-parameterization of the location of each vertex, de-               In this section, we evaluate FlexiCubes in various mesh optimiza-
+                                                                            tion tasks. First, we analyze the capacity of FlexiCubes in recon-
+scribed in Section 4, is intentional and beneficial, allowing for prop-     structing 3D geometry under perfect 3D supervision defined on the
+                                                                            surface and compare with other iso-surfacing techniques in Sec-
+erties such as the convex weighting in Section 4.2, and the bounded         tion 5.1. Next, we show that benefiting from differentiably extract-
+                                                                            ing an explicit mesh, FlexiCubes can further optimize for various
+grid deformation in Section 4.4, as well as easing stochastic opti-         mesh-based regularization losses to improve the mesh quality for
+                                                                            downstream applications.
+mization. As such, we introduce two terms to regularize the internal
+
+representation, and encourage non-degenerate parameters which
+
+can easily "flex" to accommodate any local vertex movement. These
+
+regularizers are used for all examples shown in this work.
+
+The first term penalizes the deviation of the distances between
+
+each dual vertex and the edge crossings which compose the face in           5.1 Mesh Reconstruction
+
+which it sits                                                                  Motivation and Experimental settings. To evaluate the perfor-
+                                                                            mance of optimizing 3D meshes using isosurfacing methods and
+                                                                            avoid the inefficiency that could be introduced by imperfect objec-
+                                                                            tive functions, we experiment in an ideal setting where we define
+               Ldev := MAD {| -  |2 :   N } ,               (8)             the objective functions directly on the geometric difference between
+
+                       
+
+where | · |2 is Euclidean distance, MAD denotes the mean absolute
+                       1
+deviation MAD( )   =  | |   | - mean( )|, and   N are the
+                                                                             Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:9
+
+                                                                         MC  DMTet                         FlexiCubes  Reference
+
+    Surface extractions from GT SDF                                          Differentiable iso-surfacing
+
+Fig. 13. Visual comparison of a set of iso-surfacing techniques. The three leftmost examples: Marching Cubes ( ), Dual Contouring, Neural Dual
+Contouring, use surface extraction from the ground truth SDF. The next three examples: Marching Cubes, Deep Marching Tetrahedra, and FlexiCubes, use
+differentiable iso-surfacing. The grid resolution is 643 for all methods except DMTet, which uses 803 tetrahedral grid to match the triangle count in output
+meshes.
+
+the extracted mesh and a ground truth mesh. More specifically, in            with the differentiable isosurfacing algorithms, MC and DMTet,
+each iteration we reconstruct a mesh, render depth and silhouette            which provides the most direct comparisons. We reconstruct meshes
+images from a randomly sampled camera pose and compute the                   through optimization with objective functions mentioned above.
+differences with a ground truth depth and silhouette images. We              Note that the resolution of tetrahedral grid used by DMTet is not
+also compute the SDF loss, where we randomly sample 1000 points              directly comparable with voxel grids used by our method, as the
+and evaluate their SDF values w.r.t the ground truth mesh as well as         number of vertices are different under the same resolution. Thus,
+the extracted mesh, and minimize the differences between two SDF             we additionally report DMTet at different resolution to match the
+values. Please refer to the Supplement for details of the objective          triangle counts. The resolution of DMTet is specified in the brackets.
+functions and their weighting factors.
+                                                                                In the other category we group the non-differentiable isosur-
+   Dataset. We use the dataset collected by Myles et al. [2014], which       facing methods. To ensure a fair comparison, we use the ground
+contains 3D shapes from the AIM@Shape database and popular as-               truth SDF field and extract the mesh using vanilla MC ( ),
+sets from other community repositories. This shape collection has            DC ( ) and NDC (  ). For DC we complement the
+a great diversity in geometric features and topology complexities,           ground truth SDF with normal vectors computed using finite dif-
+ranging from noisy scanned surfaces to highly-detailed CAD models.           ferences, and for NDC, we use a pretrained model provided by the
+Following Chen and Zhang [2021], we remove the non-watertight                authors1.
+and very skinny (e.g. wires) shapes, which are not suitable for isosur-
+facing methods to reconstruct. In total, we use 79 different shapes             Evaluation Metrics. We evaluate the reconstructed meshes in
+in our evaluation.                                                           terms of reconstruction accuracy and intrinsic quality of the recon-
+                                                                             structed mesh. For the former, we follow NDC [Chen et al. 2022b]
+   Baselines. As shown in Figure 13, we compare FlexiCubes with              and compute Chamfer Distance (CD), F-Score (F1), Edge Chamfer
+different methods split into two categories. FlexiCubes is grouped
+                                                                             1 https://github.com/czq142857/NDC
+1:10 · Shen et al.
+
+                                                                            Table 4. Quantitative results on mesh reconstruction with equilateral trian-
+
+                                                                            gle regularizer. Adding regularizer for DMTet and MC significantly impacts
+                                                                            geometric metrics (IN>5(%), CD), while FlexiCubes only sacrifices a bit.
+
+Uniform 323                  Adaptive 643 Adaptive 1283 GT                  643                IN>5(%)   CD(10-5)   Aspect Ratio > 4 (%)   Radius Ratio > 4 (%)   Min Angle < 10 (%) 
+                                                                            MC                    52.37      6.33             11.71                  11.71                 11.84
+                                                                            DMTet(80)             48.66      5.17             17.31                  16.68                 17.83
+                                                                            FlexiCubes            34.87      4.87              2.93                  4.49                   2.04
+                                                                            MC + Reg.             50.16      8.56             11.46                  11.43                 11.62
+                                                                            DMTet(80) + Reg.      67.65      6.69              0.29                  0.46                   0.26
+                                                                            FlexiCubes + Reg.     41.05      5.46              0.39                  0.69                   0.24
+
+2.1k tris, CD:4.3 4.5k tris, CD:2.5 7.6k tris, CD: 2.4 10k tris
+
+Uniform 323                  Adaptive 643 Adaptive 1283 GT                  into gradient-based optimization. Some surface-based regularizers
+                                                                            such as surface area may be easily expressed directly as functions
+2.1k tris, CD:5.7 5.7k tris, CD:4.7 22k tris, CD: 4.4 104k tris             of the underlying scalar field, while others, especially those which
+                                                                            depend on the mesh discretization itself, have no direct equivalent.
+                                                                            This same simple strategy does not succeed with more rigid repre-
+                                                                            sentations like Marching Cubes, because the extracted mesh does
+                                                                            not have the degrees of freedom to adapt to arbitrary objectives. We
+                                                                            provide two examples of mesh regularizations below.
+
+Fig. 14. Adaptive meshing with FlexiCubes optimizing mesh topology and      Equilateral Edge Length. In many applications, such as physics
+the octree structure jointly. CD denotes Chamfer distance (10-5).
+                                                                            simulation, generating equilateral triangles is preferable over thin
+                                        .
+                                                                            triangles. We penalize the variance of the edge lengths on the ex-
+
+Table 3. Quantitative results on shape reconstruction ablating different    tracted mesh in this regularization. In particular, we compute the
+formulations of the dual vertex.
+                                                                            average edge length ¯ =       1           E | |2, where E denotes the set of
+                                                                                                         |E|
+
+                                                                            all the edges in the extracted mesh. The regularization is computed
+
+643                          IN>5(%)  CD(10-5)  F1  ECD (10-2)  EF1  #V #T  as: edge  =         1    ,  (| - ¯ |2), where  is the set of extracted
+                                                                                               | |
+ [Nielson 2004]              53.02     5.85  0.65  2.60  0.19 10240 20488
++ flex vertex (Section 4.2)  40.88                       0.37 10022 20055   triangles. We combine this regularization with the reconstruction
+                                       5.34  0.68  0.99
+
++ grid deform (Section 4.4)  39.46     5.01  0.69  0.98  0.41 9879 19766    loss mentioned in Section 5.1. We first run the optimization to recon-
+
++ flex quad split (Section 4.3) 34.87  4.87 0.70   0.71  0.43 9916 19843
+
+                                                                            struct an input mesh without the regularization term for 1000 steps,
+
+                                                                            then we further run 300 steps using both the reconstruction loss and
+
+Distance (EDC), Edge F-score (EF1), and the percentage of Inaccu-           the regularization loss, with the regularization weight progressively
+rate Normals (IN> 5) w.r.t to the ground truth mesh. For the latter,
+we compute triangle aspect ratios, radius ratios, and min and max           increasing from 0 to 100. Adding equilateral triangle regularization
+angles. A detailed description of the evaluation metrics is provided
+in the Supplement.                                                          allows FlexiCubes to generate more uniform triangles with a slight
+
+   Results. The quantitative results of reconstruction quality are pro-     degradation in the reconstruction quality. We compare FlexiCubes
+vided in Table 2 with qualitative examples depicted in Figure 13.
+Figure 15 shows the quantitative results of intrinsic mesh quality.         with MC and DMTet, and provide qualitative results in Figure 16.
+Methods that extract the mesh as a post-processing step fail to
+achieve competitive performance in terms of reconstruction quality,         The quantitative comparison in Table 4 shows that both our method
+highlighting the importance of end-to-end optimization that miti-
+gates the discretization errors introduced in post-processing. When         and DMTet can gain a significant improvement in triangle quality
+compared with other methods that use differentiable iso-surfacing
+for mesh reconstruction (MC and DMTet), FlexiCubes extracts                 after adding the regularization, as measured by percentages of tri-
+meshes that align significantly better with ground truth geometry,
+while maintaining superior mesh quality which is on par with the            angles having Aspect Ratio > 4, Radius Ratio > 4, or Min Angle < 10.
+best performing NDC method.
+                                                                            However, our method has a significantly smaller drop in geometric
+   We further ablate each component we introduced in FlexiCubes,
+and provide quantitative results in Table 3 with qualitative examples       quality, as measured by the first two metrics in Table 4, thanks to
+in Figure 9. In the Supplement we also include reconstructions of
+the same object under different rotations.                                  the flexibility of our surface extraction formulation.
+
+5.2 Mesh Optimization with Regularizations                                     Developability. As a more complex mesh-based term, we consider
+                                                                            the developability energy of Stein et al. [2018, Equation 4], which
+Our FlexiCubes representation is flexible enough that objectives            amounts to penalizing the smallest eigenvalue of the covariance
+and regularizers which depend on the extracted mesh itself can be           matrix of face normals about each vertex. Developability is a geo-
+directly evaluated with automatic differentiation and incorporated          metric measure penalizes stretching of the surface relative to a flat
+                                                                            sheet, but does not penalize bending in a single direction; it has
+                                                                            applications to manufacturing from sheets of material like sheet
+                                                                            metal or plywood. Although developability could in-principle be
+                                                                            quantified directly on an implicit function, it has a significant rela-
+                                                                            tionship to discrete mesh connectivity, as discussed by Stein et al.
+                                                                            [2018]. Figure 17 shows the result of incorporating this term into a
+                                                                            synthetic reconstruction problem. Attempting to do the same with
+                                                                            Marching Cubes is much less successful, failing to preserve shape
+                                                                            features and achieve the desired style.
+                                                                                                                                      Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:11
+
+Aspect Ratio  0.28                               0.28                               0.28                               0.28                                   0.28                               0.28
+              0.21                               0.21                               0.21                               0.21                                   0.21                               0.21
+              0.14       2   3   4               0.14       2   3       4           0.14           2   3      4        0.14           2         3       4     0.14       2   3        4          0.14            2      3       4
+              0.07                               0.07                               0.07                               0.07                                   0.07                               0.07
+Radius Ratio  0.00                               0.00                               0.00                               0.00                                   0.00                               0.00
+
+                      1  2   3   4                       1  2   3       4                   1      2   3      4                1      2         3       4             1  2   3        4                  1       2      3       4
+              0.28                               0.28                               0.28                               0.28                                   0.28                               0.28
+Min Angle     0.21                               0.21                               0.21                               0.21                                   0.21                               0.21
+              0.14                               0.14                               0.14                               0.14                                   0.14                               0.14
+              0.07       20  40  60              0.07       20  40      60          0.07           20  40     60       0.07           20        40      60    0.07       20  40       60         0.07            20     40      60
+              0.00                               0.00                               0.00                               0.00                                   0.00                               0.00
+Max Angle
+                      1                                  1                                  1                                  1                                      1                                  1
+              0.16       80 100 120 140 160 180  0.16       80 100 120 140 160 180  0.16       80 100 120 140 160 180  0.16           80 100 120 140 160 180  0.16       80 100 120 140 160 180  0.16       80 100 120 140 160 180
+              0.12                               0.12                               0.12                               0.12                                   0.12                               0.12
+              0.08                               0.08                               0.08                               0.08                                   0.08                               0.08
+              0.04                               0.04                               0.04                               0.04                                   0.04                               0.04
+              0.00                               0.00                               0.00                               0.00                                   0.00                               0.00
+
+                      0                                  0                                  0                                  0                                      0                                  0
+              0.24                               0.24                               0.24                               0.24                                   0.24                               0.24
+              0.18                               0.18                               0.18                               0.18                                   0.18                               0.18
+              0.12                               0.12                               0.12                               0.12                                   0.12                               0.12
+              0.06                               0.06                               0.06                               0.06                                   0.06                               0.06
+              0.00                               0.00                               0.00                               0.00                                   0.00                               0.00
+
+                     60                                 60                                 60                                 60                                     60                                 60
+
+                                                                        MCSDF                  DC      NDC             MC             DMTet             FlexiCubes
+
+Fig. 15. Quantitative comparison of the intrinsic quality of extracted meshes. FlexiCubes extracts high-quality meshes with a significantly smaller amount of
+sliver triangles (row 3) and more equilateral sides (row 1). The smooth distributions of Min and Max Angle (rows 3 and 4) show that FlexiCubes can adjust the
+triangles to better fit the geometry in slightly non-planar regions.
+
+Fig. 16. Adding equilateral edge regularization to enhance triangle quality.                                                          0.06                                   0.06
+Comparing with results in Figure 13, which does not have equilateral edge                                                             0.04
+regularization loss, FlexiCubes only has slight degradation of the recon-                                                  Min Angle  0.02                                   0.04
+struction quality, while MC and DMTet lose details in the local geometry.                                                             0.00
+Please zoom in to see the mesh details.                                                                                                                                      0.02
+                                                                                                                                             0
+                                                                                                                                                    20        40         60  0.00  0             20                 40      60
+
+                                                                                                                                                        FC                                                  DMT
+
+              Marching                                      FlexiCubes                                 +0.05           Fig. 18. Visualization of nvdiffrec reconstructions for two scenes in the
+                  Cubes                                                                                                NeRF synthetic dataset. We compare DMTet and FlexiCubes for the topol-
+                                                                                                                       ogy extraction step. We note fewer sliver triangles for FlexiCubes. We
+                                                                                                                       illustate this by including min angle histogram for nvdiffrec reconstruc-
+                                                                                                                       tions for all eight scenes in the NeRF synthetic dataset. Fewer triangles with
+                                                                                                                       small angles means less sliver triangles for FlexiCubes.
+
+                                                                             -0.05                                     6 APPLICATIONS
+
+Fig. 17. To demonstrate mesh-based regularizers, we combine synthetic                                                  6.1 Photogrammetry Through Differentiable Rendering
+photogrammetry with a developability term [Stein et al. 2018], which en-
+courages fabricability from panels. FlexiCubes has the freedom to fit the                                              The differentiable isosurfacing technique DMTet [2021] is at the core
+shape and satisfy the regularizer, whereas Marching Cubes does not. Top:                                               of the recent work, nvdiffrec, which jointly optimizes shape, ma-
+Gaussian curvature in radians, Bottom: stylized render to show panelization.                                           terials, and lighting from images [Hasselgren et al. 2022; Munkberg
+                                                                                                                       et al. 2022]. By simply replacing DMTet with FlexiCubes in the
+                                                                                                                       topology optimization step, leaving the remainder of the pipeline un-
+                                                                                                                       modified, we observe improved geometry reconstructions at equal
+                                                                                                                       triangle count, which is illustrated in Figure 20. We also report
+                                                                                                                       nvdiffrec result with DMTet vs. FlexiCubes on the NeRF syn-
+                                                                                                                       thetic dataset [Mildenhall et al. 2020]. View interpolation scores and
+                                                                                                                       Chamfer distances are shown in Table 5. We show additional results
+1:12 · Shen et al.
+
+Family
+
+          Reference  DMTet  FlexiCubes                                            DMTet (96k tris)  FlexiCubes (79k tris)
+
+GoldCape
+
+          Reference  DMTet  FlexiCubes                                            DMTet (55k tris)  FlexiCubes (38k tris)
+
+Fig. 19. We compare FlexiCubes and DMTet on real world photographic datasets using nvdiffrecmc for the Family dataset from Tanks&Temples [Knapitsch
+et al. 2017] and nvdiffrec for the GoldCape dataset [Boss et al. 2021]. FlexiCubes offers more uniform tessellation and more faithfully captures small
+geometric details (e.g. the grooves in the GoldCape scene). PSNR view interpolation validation scores are 28.49 / 28.47 dB (DMTet / FlexiCubes) for the Family
+scene and 24.44 / 24.56 dB for the GoldCape scene.
+
+Table 5. View interpolation results (PSNR) for nvdiffrec reconstructions
+of the NeRF synthetic dataset, using either DMTet or FlexiCubes for the
+topology step. The image metric scores are arithmetic means over all test
+images. We also include Chamfer distances (CD) computed on visible trian-
+gles (the set of triangles visible in at least one test view) using 2.5 M point.
+Lower scores indicate better geometric fidelity.
+
+PSNR (dB)  Chair Drums Ficus Hotdog Lego Mats Mic Ship
+
+DMTet               31.8 24.6 30.9 33.2 29.0 27.0 30.7 26.0                       Fig. 20. Extracting a 3D model of the Roller scene from LDraw re-
+                                                                                  sources [Lasser 2022] using nvdiffrecmc [2022] unmodified (DMTet) and
+FlexiCubes 31.8 24.7 30.9 33.4 28.8 26.7 30.8 25.9                                nvdiffrecmc with FlexiCubes for the topology extraction step. We note
+                                                                                  more uniform triangulation and higher detail.
+CD (10-2)  Chair Drums Ficus Hotdog Lego Mats Mic Ship
+
+DMTet               4.51 3.98 0.30 2.67 2.41 0.41 1.20 55.8
+
+FlexiCubes 0.45 2.27 0.37 1.44 1.60 0.53 1.51 10.5
+
+on datasets of real-world photographs in Figure 19. In general, Flex-             3D Model          DMTet  FlexiCubes
+iCubes produces fewer sliver triangles as can be observed in the
+visual examples (Figure 18) and the min angle histogram. Addition-                Fig. 21. Extracting a 3D model of the Porsche scene from LDraw re-
+ally, the nicer triangulation of FlexiCubes leads to easier creation              sources [Lasser 2022] using nvdiffrecmc [2022]. We visualize the diffuse
+of unique texture coordinates (UV unwrapping) and improved UV                     texture, and note that FlexiCubes simplifies the UV unwrapping step (per-
+layouts when running the extracted meshes through an off-the-shelf                formed using xatlas [2021]). The resulting textures have larger regions,
+unwrapping tool [Young 2021]. Figure 21 illustrates this property.                which improves texture filtering.
+
+6.2 Mesh Simplification of Animated Objects                                       concise mesh which accurately represents the object throughout
+                                                                                  the animation. Here, we use an animation sequence from Render-
+We show the benefit of mesh optimization using the explicit mesh                  People [2020].
+representation from FlexiCubes in an animated meshing task, illus-
+trated in Figure 22. Given a known animated skeleton and images
+of the target animated object, we leverage nvdiffrec to extract a
+                                                                                           Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:13
+
+                                                                                           Motorbike            Chair  Car
+
+                                                                               DMTet
+
+                                                                               FlexiCubes
+
+T-pose                                Frame 47
+
+                                                                               Fig. 23. Qualitative results for 3D generative modeling with meshes in
+                                                                               GET3D [Gao et al. 2022]. FlexiCubes produces significantly improved mesh
+                                                                               quality with detailed thin structures and more uniform surfaces.
+
+FlexiCubes (T-pose) FlexiCubes (e2e)  Reference                                6.3 3D Mesh Generation
+                                       23k tris
+1.7k tris  1.7k tris                                                           Generation of 3D meshes, typically with the goal of facilitating 3D
+                                                                               content creation, is an important task for computer graphics and
+Fig. 22. Mesh extraction of a skinned animation, showing the benefits of end-  vision, and benefits industries such as gaming and social platforms.
+to-end optimization using an explicit, differentiable, mesh representation.    Recent 3D generative models [Chan et al. 2022; Gao et al. 2022;
+We learn the topology and appearance of a low-poly mesh through image          Gu et al. 2022; Schwarz et al. 2022; Zhou et al. 2021] differentiably
+supervision using nvdiffrec. The top row shows the reference mesh T-pose       render a 3D representation into 2D images, and combine with a
+and an animated frame. The bottom row shows a baseline of FlexiCubes           classic generative adversarial framework [Karras et al. 2019, 2020]
+optimized for the T-pose and re-skinned in a post pass, FlexiCubes with end-   to synthesize 3D content using only 2D image supervision. The
+to-end optimization, where we re-skin the mesh in each optimization step       recent state-of-the-art GET3D [Gao et al. 2022] directly synthesizes
+and use a randomized viewpoint and animation frame, and the reference.         high-quality textured 3D meshes, enabled by the differentiable iso-
+                                                                               surfacing module DMTet [Shen et al. 2021].
+   Rather than fitting a single mesh in a reference pose, Flexi-
+Cubes allows us to differentiably skin and deform the mesh via                    In this application, we demonstrate that FlexiCubes can serve
+off-the-shelf skinning tools, and simultaneously optimize with re-             as a plug-and-play differentiable mesh extraction module in a 3D
+spect to the entire animated sequence. This is in contrast to neural           generative model, and produce significantly improved mesh quality.
+volumetric [Mildenhall et al. 2020] or implicit surface representa-            Specifically, we use GET3D [Gao et al. 2022] and replace DMTet
+tions [Wang et al. 2021], where a geometry deformation system                  with FlexiCubes in the mesh extraction step. We only modify the
+either needs to be redesigned for the specific neural representation,          last layer of the 3D generator in GET3D to additionally generate
+e.g., D-NeRF [Pumarola et al. 2020], or where skinning is applied              21 weights for every cube in FlexiCubes. The training procedure,
+only after mesh optimization, without end-to-end mesh optimiza-                dataset (we use ShapeNet [Chang et al. 2015]) and other hyperpa-
+tion and gradient flow through the deformation.                                rameters of GET3D are kept unchanged.
+
+   As a baseline, we use FlexiCubes and optimize using images from             Table 6. Quantitative FID scores for a 3D generative modeling application.
+randomized cameras viewing only the mesh in its T-pose. The mesh               FlexiCubes can be applied as a differentiable mesh extraction module to
+is then re-skinned in a post-processing step. To illustrate the benefit        GET3D [Gao et al. 2022], producing significantly improved synthesis quality.
+of optimizing over the animation, we combine FlexiCubes with the
+differentiable mesh skinning approach of Hasselgren et al. [2021],                         Isosurfacing Method  Motorbike Chair Car
+re-skin the mesh in each training iteration, and optimize for image
+loss using images rendered from randomized cameras and anima-                              DMTet [Shen et al. 2021] 48.90 22.41 10.60
+tion frames. As shown in the bottom part of Figure 22, optimizing
+for the appearance over the entire animation helps re-distribute                           FlexiCubes           44.87 17.51 9.55
+triangle density to avoid mesh stretching. Note that the differen-
+tiable skinning approach from Hasselgren et al. deforms a template                Qualitative comparisons and quantitative results are provided in
+mesh with fixed topology, while the FlexiCubes version presented               Figure 23 and Table 6, respectively. FlexiCubes achieves better FID
+here additionally optimizes topology, hence provides a more flexible           scores across all categories, demonstrating the higher capacity in
+approach to mesh simplification of animated assets.                            generating 3D models. Qualitatively, the shapes generated using the
+                                                                               FlexiCubes version of GET3D are of significantly higher quality,
+                                                                               with more details and fewer sliver triangles.
+1:14 · Shen et al.                   = 1.0   = 1.8                              work with more concise extracted meshes may ultimately reduce
+                                                                                the memory requirements of the overall pipeline. Concretely, we
+                = 0                                                             show a performance benchmark of different isosurfacing methods
+                                                                                in Table 7. FlexiCubes is indeed slower and more memory-intensive
+Reference Optimized Initialization                                              than DMTet, and significantly more so than ordinary Marching
+   = 0.300  = 0.311  = 1.500                                                    Cubes, but all of these costs are small compared to the downstream
+                                                                                task, which we benchmark in Table 8. The maximum grid resolution
+                                                                                is not constrained by isosurface extraction, but rather by other com-
+                                                                                ponents of the applications, such as rendering or neural network
+                                                                                evaluations. We consistently choose the highest resolution that can
+                                                                                be supported by high-end GPUs for all of our applications.
+
+                                                                                Table 7. Quantitative comparison of the performance of isosurfacing op-
+                                                                                erations. FlexiCubes may significantly increase time and memory costs
+                                                                                compared to simpler extractors, however these costs are still generally small
+                                                                                in the context of downstream applications (see Table 8).
+
+Fig. 24. We optimize shape, texture, and physical properties of an object       643                  Forward Time (ms)  Backward Time (ms)  Memory (MB)
+from multi-view videos by feeding the extracted tetrahedral mesh from           MC                            2.28                0.43           12.05
+FlexiCubes into differentiable physics simulation [Jatavallabhula et al. 2021]  DMTet                         2.33                1.38           22.44
+and differentiable rendering [Laine et al. 2020] pipeline. In the bottom         [Nielson 2004]               4.97                1.69           25.08
+row (Reference shape), we set the mass density  = 0.300 and fix the             FlexiCubes                    8.93                7.32          116.56
+two ending points of an object, letting it drop and deform under gravity.       1283
+We show the output at three timesteps (three columns). We initialize an         MC                   Forward Time (ms)  Backward Time (ms)  Memory (MB)
+SDF with a sphere geometry and randomly-guessed mass density ( =                DMTet                         5.08                0.58           72.85
+1.500, top row), and optimize in a two-stage manner. In the first stage, we      [Nielson 2004]               6.94                1.39          168.27
+utilize the beginning frame to optimize the shape and texture. In the second    FlexiCubes                    7.34                1.74          150.75
+stage, we extract a tetrahedral mesh (Section 4.5) using FlexiCubes and                                      14.06                9.53          816.17
+apply differentiable physics simulation pipeline to optimize the physical
+parameters. The optimized physical parameters ( = 0.311, middle row) are        Table 8. Quantitative comparison of the performance of various applica-
+close to the ground truth ( = 0.300, bottom row).                               tions using two isosurfacing methods: DMTet and FlexiCubes. Note that
+                                                                                nvdiffrecmc stores the per-vertex parameters in memory, whereas GET3D
+6.4 Differentiable Physics Simulation                                           uses MLPs to predict these parameters. As a result, the introduction of more
+                                                                                parameters leads to a larger increase in memory usage for nvdiffrecmc.
+To leverage FlexiCubes's ability to differentiably extract tetra-               FlexiCubes may even lower the memory requirements of the overall appli-
+hedral meshes, we combine it with differentiable physics simu-                  cation, because fewer triangles are needed to represent the same geometry.
+lation [Jatavallabhula et al. 2021] and a differentiable rendering
+pipeline [Laine et al. 2020] to jointly recover 3D shapes and physical          Applications (963)   nvdiffrecmc        GET3D               FlexiCubes
+parameters from multi-view videos. Given a video sequence of an                 Isosurface           DMTet FlexiCubes   DMTet               610
+object deforming, we aim to recover a tetrahedral mesh of the rest              Time per iter. (ms)  307 315            510                 11.1
+pose as well as material parameters which reproduce the motion                  Memory(GiB)          13.1 15.3          11.6
+under simulation. In particular, we focus on FEM simulation with
+neo-Hookean elasticity to model elastic objects. After extracting the           7.2 Limitations
+tetrahedral mesh from FlexiCubes, we feed it into GradSim [Jataval-
+labhula et al. 2021] to obtain deformed shapes at different time steps,            Self-intersections. Although our approach generally produces high-
+these shapes are then differentiably rendered into multi-view im-               quality meshes with improved element shapes in practice, and our
+ages. We optimize both the 3D geometry and the physical density of              core algorithm guarantees manifoldness, we do not guarantee non-
+the 3D shape in two-stage manner as in past work. See Figure 24 and             self-intersecting output. Intersections arise because our flexible dual
+the Supplement for more details. The optimized physical parameters              representation (Section 4) allows the extracted vertices to move into
+and 3D geometry with texture are close to the ground truth.                     intersecting configurations; we found that strictly constraining the
+                                                                                motions to non-intersecting configurations unacceptably worsened
+7 DISCUSSION                                                                    the expressivity and ease of optimization of the method. At a grid
+                                                                                resolution of 643, in our experiment with 79 3D shapes in Table 2,
+7.1 Performance                                                                 we observed self intersections on 0.10% of the triangles, and we
+                                                                                note that this is lower than Dual Contouring variants (DC: 1.48%,
+Introducing additional degrees of freedom into the extraction repre-            NDC: 0.13%). Our optional extensions to tetrahedral and hierarchical
+sentation incurs a moderate increase in runtime and memory usage.               meshing have slightly weaker guarantees, occasionally containing
+However, in many applications, the cost of mesh extraction is of-               small cavities or nonmanifold elements in ambiguous cases arising
+ten small compared to the overall computation, and the ability to               from the Dual Marching Cubes topology. In our evaluation, we find
+                                                                                        Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:15
+
+that these small imperfections are not detrimental for downstream                           Differentiable Renderer. In Advances In Neural Information Processing Systems,
+applications, but note that additional consideration may be required                        2019a.
+if a watertight mesh is imperative for a given application.                             Wenzheng Chen, Jun Gao, Huan Ling, Edward Smith, Jaakko Lehtinen, Alec Jacobson,
+                                                                                            and Sanja Fidler. Learning to Predict 3D Objects with an Interpolation-based
+   Continuity. More fundamentally, although we consider differen-                           Differentiable Renderer. In Advances In Neural Information Processing Systems,
+tiable mesh extraction, our method is actually not even globally                            2019b.
+continuous. When the isosurface slips over a grid vertex, the mesh                      Zhiqin Chen and Hao Zhang. Neural Marching Cubes. ACM Trans. Graph., 40(6), 2021.
+jumps discontinuously, a property we inherit from Dual Contour-                         Zhiqin Chen, Andrea Tagliasacchi, and Hao Zhang. Bsp-net: Generating compact
+ing and Dual Marching Cubes. Fortunately, because we apply our                              meshes via binary space partitioning. Proceedings of IEEE Conference on Computer
+extraction in stochastic optimization settings, such as stochastic gra-                     Vision and Pattern Recognition (CVPR), 2020.
+dient descent with Adam, small local discontinuities do not obstruct                    Zhiqin Chen, Thomas Funkhouser, Peter Hedman, and Andrea Tagliasacchi. Mobilenerf:
+optimization in practice. For this reason, we focus on our analy-                           Exploiting the polygon rasterization pipeline for efficient neural field rendering on
+sis and experiments on the property of effective optimization in                            mobile architectures. arXiv preprint arXiv:2208.00277, 2022a.
+downstream applications (Figure 4), rather than on formal notions                       Zhiqin Chen, Andrea Tagliasacchi, Thomas Funkhouser, and Hao Zhang. Neural Dual
+of differentiability or smoothness.                                                         Contouring. ACM Trans. Graph., 41(4), 2022b.
+                                                                                        Evgeni Chernyaev. Marching Cubes 33: Construction of topologically correct isosur-
+7.3 Future Work                                                                             faces. Technical report, Institute for High Energy Physics, Moscow, 1995.
+                                                                                        Bruno Rodrigues De Araújo, Daniel S Lopes, Pauline Jepp, Joaquim A Jorge, and Brian
+Looking forward, one opportunity to advance this approach is to                            Wyvill. A survey on implicit surface polygonization. ACM Computing Surveys
+integrate volumetric rendering with mesh-based representations for                         (CSUR), 47(4):1­39, 2015.
+improved gradient approximation on visual tasks [Chen et al. 2022a].                    Boyang Deng, Kyle Genova, Soroosh Yazdani, Sofien Bouaziz, Geoffrey Hinton, and
+Furthermore, 4D spatiotemporal meshing has important applica-                              Andrea Tagliasacchi. Cvxnets: Learnable convex decomposition. arXiv preprint
+tions in dynamic geometry representation and optimization [Park                             arXiv:1909.05736, 2019.
+et al. 2021]. Very directly, we also hope to integrate adaptive hi-                     Akio Doi and Akio Koide. An efficient method of triangulating equi-valued surfaces
+erarchical mesh extraction (Section 4.6) into generative modeling                           by using tetrahedral cells. IEICE Transactions on Information and Systems, 74(1):
+applications. More broadly, in our experiments, we have found                               214­224, 1991.
+FlexiCubes to be a powerful tool for mesh optimization in visual                        Jun Gao, Wenzheng Chen, Tommy Xiang, Clement Fuji Tsang, Alec Jacobson, Mor-
+computing, and we are eager to continue to build on top of it both                          gan McGuire, and Sanja Fidler. Learning Deformable Tetrahedral Meshes for 3D
+in our own work and across the larger community.                                            Reconstruction. In Advances In Neural Information Processing Systems, 2020.
+                                                                                        Jun Gao, Tianchang Shen, Zian Wang, Wenzheng Chen, Kangxue Yin, Daiqing Li,
+ACKNOWLEDGMENTS                                                                             Or Litany, Zan Gojcic, and Sanja Fidler. GET3D: A Generative Model of High
+                                                                                            Quality 3D Textured Shapes Learned from Images. In Advances In Neural Information
+The authors are grateful to Aaron Lefohn and David I.W. Levin for                           Processing Systems, 2022.
+their support and discussions during this research, as well as the                      Georgia Gkioxari, Jitendra Malik, and Justin Johnson. Mesh R-CNN. ICCV 2019, 2019.
+anonymous reviewers for their valuable comments and feedback.                           Thibault Groueix, Matthew Fisher, Vladimir G. Kim, Bryan Russell, and Mathieu Aubry.
+                                                                                           AtlasNet: A Papier-Mâché Approach to Learning 3D Surface Generation. In Pro-
+REFERENCES                                                                                  ceedings IEEE Conf. on Computer Vision and Pattern Recognition (CVPR), 2018.
+                                                                                        Jiatao Gu, Lingjie Liu, Peng Wang, and Christian Theobalt. Stylenerf: A style-based 3d
+Samir Akkouche and Eric Galin. Adaptive implicit surface polygonization using march-        aware generator for high-resolution image synthesis. In International Conference on
+    ing triangles. In Computer Graphics Forum, volume 20:2, pages 67­80, 2001.              Learning Representations, 2022.
+                                                                                        Rana Hanocka, Gal Metzer, Raja Giryes, and Daniel Cohen-Or. Point2Mesh: A Self-Prior
+Anonymous. PAC-NeRF: Physics Augmented Continuum Neural Radiance Fields for                 for Deformable Meshes. ACM Trans. Graph., 39(4), 2020.
+    Geometry-Agnostic System Identification. ICLR Sumbission, 2023.                     Jon Hasselgren, Jacob Munkberg, Jaakko Lehtinen, Miika Aittala, and Samuli Laine.
+                                                                                           Appearance-Driven Automatic 3D Model Simplification. In Eurographics Symposium
+Sergei Azernikov and Anath Fischer. Anisotropic meshing of implicit surfaces. In            on Rendering, 2021.
+    International Conference on Shape Modeling and Applications 2005 (SMI'05), pages    Jon Hasselgren, Nikolai Hofmann, and Jacob Munkberg. Shape, Light, and Material
+    94­103. IEEE, 2005.                                                                     Decomposition from Images using Monte Carlo Rendering and Denoising. In
+                                                                                            Advances in Neural Information Processing Systems (NeurIPS), 2022.
+Jules Bloomenthal. Polygonization of implicit surfaces. Computer Aided Geometric        Hans-Christian Hege, Martin Seebass, Detlev Stalling, and Malte Zöckler. A Generalized
+    Design, 5(4):341­355, 1988.                                                             Marching Cubes Algorithm Based On Non-Binary Classifications. ZIB Preprint SC-
+                                                                                            97-05, 1997.
+Jules Bloomenthal. An implicit surface polygonizer. Graphics gems, 4:324­350, 1994.     Adrian Hilton, Andrew J Stoddart, John Illingworth, and Terry Windeatt. Marching
+Jules Bloomenthal, Chandrajit Bajaj, Jim Blinn, Marie-Paule Cani, Brian Wyvill, Alyn        triangles: range image fusion for complex object modelling. In Proceedings of 3rd
+                                                                                            IEEE international conference on image processing, volume 2, pages 381­384. IEEE,
+    Rockwood, and Geoff Wyvill. Introduction to implicit surfaces. Morgan Kaufmann,        1996.
+    1997.                                                                               Adrian Hilton, John Illingworth, et al. Marching triangles: Delaunay implicit surface
+Mark Boss, Raphael Braun, Varun Jampani, Jonathan T. Barron, Ce Liu, and Hendrik P.A.       triangulation. University of Surrey, 1997.
+    Lensch. NeRD: Neural Reflectance Decomposition from Image Collections. In IEEE      Yuanming Hu, Luke Anderson, Tzu-Mao Li, Qi Sun, Nathan Carr, Jonathan Ragan-
+    International Conference on Computer Vision (ICCV), 2021.                               Kelley, and Frédo Durand. Difftaichi: Differentiable programming for physical
+Andrea Bottino, Wim Nuij, and Kees Van Overveld. How to shrinkwrap through                  simulation. ICLR, 2020.
+    a critical point: an algorithm for the adaptive triangulation of iso-surfaces with  Krishna Murthy Jatavallabhula, Miles Macklin, Florian Golemo, Vikram Voleti, Linda
+    arbitrary topology. In Proc. Implicit Surfaces, volume 96, pages 53­72, 1996.           Petrini, Martin Weiss, Breandan Considine, Jerome Parent-Levesque, Kevin Xie,
+Eric R. Chan, Connor Z. Lin, Matthew A. Chan, Koki Nagano, Boxiao Pan, Shalini De           Kenny Erleben, Liam Paull, Florian Shkurti, Derek Nowrouzezahrai, and Sanja Fidler.
+    Mello, Orazio Gallo, Leonidas Guibas, Jonathan Tremblay, Sameh Khamis, Tero             gradSim: Differentiable simulation for system identification and visuomotor control.
+    Karras, and Gordon Wetzstein. Efficient Geometry-aware 3D Generative Adversarial        International Conference on Learning Representations (ICLR), 2021.
+    Networks. In CVPR, 2022.                                                            Tao Ju, Frank Losasso, Scott Schaefer, and Joe Warren. Dual Contouring of Hermite
+Angel X Chang, Thomas Funkhouser, Leonidas Guibas, Pat Hanrahan, Qixing Huang,              Data. ACM Trans. Graph., 21(3):339­346, 2002.
+    Zimo Li, Silvio Savarese, Manolis Savva, Shuran Song, Hao Su, et al. Shapenet: An   Tasso Karkanis and A James Stewart. Curvature-dependent triangulation of implicit
+    information-rich 3d model repository. arXiv preprint arXiv:1512.03012, 2015.            surfaces. IEEE Computer Graphics and Applications, 21(2):60­69, 2001.
+Wenzheng Chen, Jun Gao, Huan Ling, Edward Smith, Jaakko Lehtinen, Alec Jacobson,        Tero Karras, Samuli Laine, and Timo Aila. A style-based generator architecture for
+    and Sanja Fidler. Learning to Predict 3D Objects with an Interpolation-based            generative adversarial networks. In Proceedings of the IEEE/CVF conference on
+                                                                                            computer vision and pattern recognition, pages 4401­4410, 2019.
+                                                                                        Tero Karras, Samuli Laine, Miika Aittala, Janne Hellsten, Jaakko Lehtinen, and Timo
+                                                                                           Aila. Analyzing and improving the image quality of StyleGAN. In Proc. CVPR, 2020.
+                                                                                        Hiroharu Kato, Yoshitaka Ushiku, and Tatsuya Harada. Neural 3d mesh renderer. In
+                                                                                            Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages
+1:16 · Shen et al.
+
+3907­3916, 2018.                                                                        Tianchang Shen, Jun Gao, Kangxue Yin, Ming-Yu Liu, and Sanja Fidler. Deep Marching
+                                                                                           Tetrahedra: a Hybrid Representation for High-Resolution 3D Shape Synthesis. In
+Arno Knapitsch, Jaesik Park, Qian-Yi Zhou, and Vladlen Koltun. Tanks and temples:           Advances in Neural Information Processing Systems (NeurIPS), 2021.
+
+Benchmarking large-scale scene reconstruction. ACM Trans. Graph., 36(4):78:1­           Barton T Stander and John C Hart. Interactive re-polygonization of blobby implicit
+                                                                                            curves. In Proc. Western Computer Graphics Symposium, volume 5, 1995.
+78:13, 2017.
+                                                                                        Oded Stein, Eitan Grinspun, and Keenan Crane. Developability of triangle meshes.
+Samuli Laine, Janne Hellsten, Tero Karras, Yeongho Seol, Jaakko Lehtinen, and Timo          ACM Trans. Graph., 37(4), 2018.
+
+Aila. Modular Primitives for High-Performance Differentiable Rendering. ACM             Subodh C Subedi, Chaman Singh Verma, and Krishnan Suresh. A review of methods for
+                                                                                            the geometric post-processing of topology optimized models. Journal of Computing
+Transactions on Graphics, 39(6), 2020.                                                      and Information Science in Engineering, 20(6), 2020.
+
+Gerald Lasser. LDraw.org, 2022. URL https://www.ldraw.org/.                             Minhyuk Sung, Hao Su, Vladimir G Kim, Siddhartha Chaudhuri, and Leonidas Guibas.
+                                                                                            Complementme: Weakly-supervised component suggestions for 3d modeling. ACM
+Thomas Lewiner, Hélio Lopes, Antônio Wilson Vieira, and Geovan Tavares. Efficient           Transactions on Graphics (TOG), 36(6):1­12, 2017.
+
+implementation of marching cubes' cases with topological guarantees. Journal of         Shubham Tulsiani, Hao Su, Leonidas J. Guibas, Alexei A. Efros, and Jitendra Malik.
+                                                                                            Learning shape abstractions by assembling volumetric primitives. In Computer
+graphics tools, 8(2):1­15, 2003.                                                            Vision and Pattern Regognition (CVPR), 2017.
+
+Xinghua Liang and Yongjie Zhang. An octree-based dual contouring method for trian-      Kees Van Overveld and Brian Wyvill. Shrinkwrap: An efficient adaptive algorithm for
+                                                                                            triangulating an iso-surface. The visual computer, 20(6):362­379, 2004.
+gular and tetrahedral mesh generation with guaranteed angle range. Engineering
+                                                                                        Nanyang Wang, Yinda Zhang, Zhuwen Li, Yanwei Fu, Wei Liu, and Yu-Gang Jiang.
+with Computers, 30(2):211­222, 2014.                                                        Pixel2mesh: Generating 3d mesh models from single rgb images. In Proceedings of
+                                                                                            the European conference on computer vision (ECCV), pages 52­67, 2018.
+Yiyi Liao, Simon Donné, and Andreas Geiger. Deep Marching Cubes: Learning Explicit
+                                                                                        Peng Wang, Lingjie Liu, Yuan Liu, Christian Theobalt, Taku Komura, and Wenping
+Surface Representations. In Conference on Computer Vision and Pattern Recognition          Wang. NeuS: Learning Neural Implicit Surfaces by Volume Rendering for Multi-view
+                                                                                            Reconstruction. In Advances in Neural Information Processing Systems (NeurIPS),
+(CVPR), pages 2916­2925, 2018.                                                              pages 27171­27183, 2021.
+
+Chen-Hsuan Lin, Jun Gao, Luming Tang, Towaki Takikawa, Xiaohui Zeng, Xun Huang,         Rephael Wenger. Isosurfaces: geometry, topology, and algorithms. CRC Press, 2013.
+                                                                                        Kangxue Yin, Zhiqin Chen, Siddhartha Chaudhuri, Matthew Fisher, Vladimir Kim, and
+Karsten Kreis, Sanja Fidler, Ming-Yu Liu, and Tsung-Yi Lin. Magic3d: High-resolution
+                                                                                            Hao Zhang. Coalesce: Component assembly by learning to synthesize connections.
+text-to-3d content creation. arXiv preprint arXiv:2211.10440, 2022.                         In Proc. of 3DV, 2020.
+                                                                                        Jonathan Young. xatlas, 2021. https://github.com/jpcy/xatlas.
+Shichen Liu, Tianye Li, Weikai Chen, and Hao Li. Soft Rasterizer: A Differentiable      Peng Zhou, Lingxi Xie, Bingbing Ni, and Qi Tian. Cips-3d: A 3d-aware generator of gans
+                                                                                            based on conditionally-independent pixel synthesis. arXiv preprint arXiv:2110.09788,
+Renderer for Image-based 3D Reasoning. In International Conference on Computer              2021.
+                                                                                        Chenyang Zhu, Kai Xu, Siddhartha Chaudhuri, Renjiao Yi, and Hao Zhang. SCORES:
+Vision (ICCV), pages 7707­7716, 2019.                                                       Shape composition with recursive substructure priors. ACM Transactions on Graph-
+                                                                                            ics, 37(6):Article 211, 2018.
+William E. Lorensen and Harvey E. Cline. Marching Cubes: A High Resolution 3D
+
+Surface Construction Algorithm. SIGGRAPH Comput. Graph., 21(4):163­169, 1987.
+
+Neil H McCormick and Robert B Fisher. Edge-constrained marching triangles. In
+
+Proceedings. First International Symposium on 3D Data Processing Visualization and
+
+Transmission, pages 348­351. IEEE, 2002.
+
+Ishit Mehta, Manmohan Chandraker, and Ravi Ramamoorthi. A Level Set Theory
+
+for Neural Implicit Evolution Under Explicit Flows. In ECCV 2022, Proceedings, Part
+
+II, page 711­729, 2022.
+
+Ben Mildenhall, Pratul P. Srinivasan, Matthew Tancik, Jonathan T. Barron, Ravi Ra-
+
+mamoorthi, and Ren Ng. NeRF: Representing Scenes as Neural Radiance Fields for
+
+View Synthesis. In ECCV, 2020.
+
+Claudio Montani, Riccardo Scateni, and Roberto Scopigno. Discretized marching cubes.
+
+In Proceedings Visualization'94, pages 281­287. IEEE, 1994.
+
+Thomas Müller, Alex Evans, Christoph Schied, and Alexander Keller. Instant Neural
+
+Graphics Primitives with a Multiresolution Hash Encoding. ACM Trans. Graph., 41
+
+(4):102:1­102:15, 2022.
+
+Jacob Munkberg, Jon Hasselgren, Tianchang Shen, Jun Gao, Wenzheng Chen, Alex
+
+Evans, Thomas Mueller, and Sanja Fidler. Extracting Triangular 3D Models, Materials,
+
+and Lighting From Images. In 2022 IEEE/CVF Conference on Computer Vision and
+
+Pattern Recognition (CVPR), pages 8270­8280, 2022.
+
+Ashish Myles, Nico Pietroni, and Denis Zorin. Robust field-aligned global parametriza-
+
+tion. ACM Transactions on Graphics (TOG), 33(4):1­14, 2014.
+
+Charlie Nash, Yaroslav Ganin, S. M. Ali Eslami, and Peter W. Battaglia. Polygen: An
+
+autoregressive generative model of 3d meshes. ICML, 2020.
+
+Baptiste Nicolet, Alec Jacobson, and Wenzel Jakob. Large Steps in Inverse Rendering of
+
+Geometry. ACM Transactions on Graphics (Proceedings of SIGGRAPH Asia), 40(6),
+
+2021.
+
+Gregory M. Nielson. On Marching Cubes. IEEE Transactions on visualization and
+
+computer graphics, 9(3):283­297, 2003.
+
+Gregory M Nielson. Dual Marching Cubes. In IEEE visualization 2004, pages 489­496.
+
+IEEE, 2004.
+
+Keunhong Park, Utkarsh Sinha, Peter Hedman, Jonathan T Barron, Sofien Bouaziz,
+
+Dan B Goldman, Ricardo Martin-Brualla, and Steven M Seitz. Hypernerf: A higher-
+
+dimensional representation for topologically varying neural radiance fields. arXiv
+
+preprint arXiv:2106.13228, 2021.
+
+Despoina Paschalidou, Angelos Katharopoulos, Andreas Geiger, and Sanja Fidler. Neural
+
+parts: Learning expressive 3d shape abstractions with invertible neural networks.
+
+In Proceedings IEEE Conf. on Computer Vision and Pattern Recognition (CVPR), 2021.
+
+Pixar Animation Studios.          Universal Scene Description Website, 2016.
+
+http://www.openusd.org.
+
+Albert Pumarola, Enric Corona, Gerard Pons-Moll, and Francesc Moreno-Noguer. D-
+
+nerf: Neural radiance fields for dynamic scenes. arXiv preprint arXiv:2011.13961,
+
+2020.
+
+Edoardo Remelli, Artem Lukoianov, Stephan Richter, Benoît Guillard, Timur Bagautdi-
+
+nov, Pierre Baque, and Pascal Fua. Meshsdf: Differentiable iso-surface extraction.
+
+Advances in Neural Information Processing Systems, 33:22468­22478, 2020.
+
+RenderPeople. Renderpeople, 2020. https://renderpeople.com/3d-people/.
+
+Scott Schaefer, Tao Ju, and Joe Warren. Manifold dual contouring. IEEE Transactions
+
+on Visualization and Computer Graphics, 13(3):610­619, 2007.
+
+Katja Schwarz, Axel Sauer, Michael Niemeyer, Yiyi Liao, and Andreas Geiger. Voxgraf:
+
+Fast 3d-aware image synthesis with sparse voxel grids. ARXIV, 2022.
+
+Roberto Scopigno. A modified look-up table for implicit disambiguation of marching
+
+cubes. The visual computer, 10:353­355, 1994.
+                                                                          Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:17
+
+SUPPLEMENTAL MATERIAL                                                     values we constrain. Specifically, for the four cells sharing a minimal
+                                                                          edge, we check the four pairs of adjacent faces among these cells. If a
+We start the supplement by providing more details on our method           finer face  is adjacent to a coarser face  , for every vertex  of 
+in Section A, as well as further details of different isosurfacing        that is not a vertex of  , we compute and store the bilinear weights
+methods in Section B. Section C describes the experimental setting        of  with respect to the vertices of  . During optimization, the
+along with the baselines and depicts more qualitative results. Fi-        SDF value of  is not optimized. Instead, it is directly interpolated
+nally, in Section D, we provide additional details and results for our    using precomputed bilinear weights applied to the SDF values on
+applications.                                                              . Note that the constrained vertices only need to be re-identified
+                                                                          when there is an update to the octree structure.
+A DETAILS ON FLEXICUBES
+                                                                          A.3 Addressing Ambiguity in DMC Configurations
+A.1 Tetrahedral Mesh Extraction
+                                                                          In rare cases, the original Dual Marching Cubes algorithm can
+In Section 4.5 of the main paper, we describe the ambiguity in con-       produce non-manifold meshes. We follow the solution described
+nectivity when extending the tetrahedralization strategy proposed         in Wenger [2013] to address the ambiguity of cases C16 and C19
+by Liang and Zhang [2014] to Dual Marching Cubes (DMC). The am-           in the DMC configurations. With this modification applied, the ex-
+biguity arises when a cell contains multiple extracted mesh vertices.     tracted surface of FlexiCubes in the uniform grid setting is always
+Connecting the incorrect vertices leads to intersections or holes in      2-manifold.
+the extracted tetrahedral mesh. We propose two rules to address the
+ambiguity cases. Recall that the tetrahedra are formed in two cases:      B ANALYSIS
+
+    (1) For each grid edge connecting two grid vertices with different    This section provides further details of the experiment shown in
+         signs, we first form a four-sided pyramid by connecting one      Figure 4 in the main paper, where we show the optimization process
+         of the grid vertices with four mesh vertices that correspond     for a collection of isosurfacing algorithms.
+         to the grid edge and then subdivide the pyramid into two
+         tetrahedra. This case is uniquely determined in all DMC             In the analysis, we follow a similar experimental setup as Sec-
+         configurations (see bottom-left subfigure of Figure 10 in the    tion 5.1 in the main paper. Specifically, we start by initializing the
+         main paper).                                                     SDF to represent a sphere for all methods. In each iteration, we then
+                                                                          extract the surface mesh from the SDF (defined on a grid). Finally,
+    (2) For each grid edge connecting two grid vertices with the          we render the reconstructed mesh from randomly sampled camera
+         same sign, the tetrahedron is formed by the two grid vertices    views (same for all methods) and compute the differences with the
+         and two vertices in consecutive adjacent cells (referring to     ground truth depth and silhouette image. We also compute the SDF
+         top-left subfigure in Figure 10 in the main paper). In this      loss, where we randomly sample 1000 points and evaluate their SDF
+         case, we first identify the face shared by the adjacent cells.   values w.r.t the ground truth mesh, as well as the extracted mesh,
+         We then identify an edge of the face with different signs        and minimize the differences between two SDF values. We use L1
+         and select the mesh vertex corresponding to the identified       loss for the silhouette image, L2 norm for the depth image, and MSE
+         edge. Referring to Figure 7 in the main paper, in cases C6,      loss for the SDF. The combinedd loss is back-propagated to the SDF
+         C10, C12, and C15, it is obvious that the formed tetrahedra      through the differentiable isosurfacing layers, which we detail in the
+         following this rule are always inside the primal faces. Note     next paragraph. We use the same optimizer and learning rate for all
+         that the described rule can be implemented efficiently with      methods. For FlexiCubes, we leverage the regularizers described in
+         a precomputed lookup table.                                      Section 4.7 of the main paper. We also leverage Lsign for all methods
+                                                                          to remove floater and internal geometry. In this analysis, the grid
+In most cases, these rules address the ambiguity and result in correct    resolution is set to 64 for the tetrahedral grid used by DMTet, and
+tetrahedralization of the interior volume. However, for case C18, the     48 for the voxel grid used by the other methods to roughly match
+interior volume is not completely filled by the formed tetrahedra.        the number of triangles in the output mesh.
+Although this case rarely happens during optimization and does
+not obstruct the downstream application, it remains a limitation of       B.1 Baselines
+our method.
+                                                                          We use the official implementation of DMTet from the nvdiffrec
+A.2 Adaptive Mesh Resolution                                              codebase2. For Dual Contouring (DC) and Marching Cubes (MC),
+                                                                          there are, to the best of our knowledge, no differentiable implemen-
+In Section 4.6 of the main paper, we describe a constraint applied to     tations available, so we implemented these methods in PyTorch to
+the SDF on octree vertices to avoid cracks or non-manifold surfaces       leverage the autograd functionalities. Specifically, we adapted the
+being produced by DMC. Here we provide more details on how this           MC variant from Lorensen and Cline [1987], following the imple-
+constraint is enforced. As a preliminary, Ju et al. [2002] propose a      mentation of the Marching Tetrahedra function in DMTet, such that
+method to generate adaptive contours from an octree representation.       the zero-crossings on grid edges are computed in a differentiable
+Their method identifies the minimal edges of the octree, i.e., the        manner. For DC, we utilize PyTorch's linear solver, lstsq3, to solve
+edges which do not contain a finer edge of the adjacent cell, as well as
+four cells sharing each minimal edge with a recursive call. We refer      2 https://github.com/NVlabs/nvdiffrec
+readers to the original paper for more details about the algorithm.       3 https://pytorch.org/docs/stable/generated/torch.linalg.lstsq.html#torch.linalg.lstsq
+We repurpose this algorithm to identify the vertices whose SDF
+1:18 · Shen et al.
+
+the quadratic error function (QEF) given in Equation 2 (main paper).               loss, depth loss, SDF loss and Ldev by 1, 10, 2000, and 1 respectively.
+The gradient direction at any point,  ( ), is approximated by                      The scale of Lsign decays from 0.2 to 0.01 linearly during training.
+local differentiation over the SDF computed via trilinear interpo-                 We optimize each shape for 1000 iterations with a learning rate of
+                                                                                   0.01.
+lation. To avoid the solution exploding to a distant location when
+                                                                                      For all isosurfacing methods, we use uniform grids in [-1, 1]3.
+ ( ) are nearly coplanar, we followed the DC implementation in                     We center each object around the origin and scale it such that the
+the NDC source code4 and add a regularization term which biases                    longest side of its bounding-box equals 1.8. For NDC, the effective
+                                                                                   resolution of the grid is reduced by the padding of the network.
+the solution toward the centroid of associated zero-crossings  .                   Therefore, we increase the grid resolution for NDC by the padding
+Specifically, Equation 2 is regularized as:                                        size for a fair comparison with other methods.
+
+                                                                                   C.2 Evaluation Metrics
+
+ = argmin                  ( ) · ( -  ) + | -  |, (10)                             We provide details on all the evaluation metrics we used in the main
+                                                                                   paper.
+                       Z
+                                                                                      Chamfer Distance (CD). This metric measures the distance be-
+where   =   1          is the centroid of the zero-crossing                        tween two point clouds by nearest neighbor search. To measure the
+           | |                                                                     CD between meshes, we sample each mesh to get a point cloud of
+                                                                                   size 100,000. Note that for the nvdiffrec NeRF synthetic dataset
+points and  is the scalar weight that controls the strength of the                 evaluation (Table 5 in the main paper), we use a different version of
+                                                                                   Chamfer Distance, computed only on visible triangles, using 2.5M
+regularizer. We ablate two DC versions with  = 1 and  = 0.01, de-                  points on meshes with another scale than in the main experiment, so
+                                                                                   the CD numbers from Table 5 cannot be directly compared against
+noted as 1 and 001 respectively. In addition, we compare                           the CD scores reported in Section 5.
+with a DC variant which directly takes the centroid as the mesh
+                                                                                      F1-score. The harmonic mean of precision and recall. To compute
+vertex, denoted as  . Please refer to Figure 2 in the main                         precision and recall, we sample each mesh into a point cloud of
+paper for illustrations of these regularized versions of DC. For NDC,              the same size as CD and search for the nearest neighbor points.
+                                                                                   When computing the precision, if the distance from a point on the
+we use a pretrained neural network provided by the authors to                      predicted mesh to the GT point cloud is small enough (threshold =
+                                                                                   0.003), we count it as a true positive point. Otherwise, it is counted
+extract the isosurface. During optimization, we freeze the network                 as a false positive point. When computing the recall, if the distance
+                                                                                   from a point on the GT mesh to the predicted mesh is small enough
+parameters and only optimize the SDF values.                                       (threshold = 0.003), we count it as a true positive point. Otherwise,
+                                                                                   we count it as a false negative point.
+C EXPERIMENTAL DETAILS
+                                                                                      Edge Chamfer Distance (ECD) and Edge F-score (EF1). These met-
+This section provides additional details for the experiment settings               rics are used in prior works [Chen and Zhang 2021; Chen et al.
+in Section 5 in the main paper.                                                    2022b] for evaluating the reconstruction of sharp features (edge
+                                                                                   points). First, for each point in the sampled point cloud, we look at
+C.1 Baselines                                                                      the dot products between its normal and the normal of its neighbor
+                                                                                   points. If the mean dot product is smaller than a threshold (0.2), the
+The implementation of the baseline methods used in this experi-                    point is treated as an edge point. ECD and EF1 measure the Chamfer
+ment is described in Section 5.1 of the main paper. The inputs to                  Distance and F1-score between edge point sets.
+ and   are the ground truth SDF values evaluated
+at grid vertices. Since the pretrained neural network in                              The percentage of inaccurate normals (IN> 5). For each point in
+is sensitive to the scale of the SDF inputs, we use the function5                  the sampled point cloud, we store the normal of the face that the
+provided by the authors to compute the SDF. For  , which                           point was generated from. Given a predicted mesh and a GT mesh,
+requires gradients as input, we additionally compute the gradient                  we search for nearest point pairs from one to another. We compute
+of the SDF at zero-crossings using finite differences. The regularizer             the angles between the normals stored on two points, and report
+weight  in Eqn. 10 is determined independently for each cube in                    the percentage of pairs having angles larger than 5 degrees.
+an adaptive manner, following the DC implementation by Chen
+et al. [2022b]. Specifically, we begin by solving Eqn. 10 with a small                Aspect Ratio (AR) and Radius Ratio (RR). AR and RR are different
+, and iteratively double the value of  until the solution with the                 measures of triangle regularity, with a smaller value indicates better
+updated QEF falls inside the cube or  reaches the limit. The initial               triangle quality. While there exist different definitions of AR and RR
+ is set to 0.01 and the limit is 106 in our experiment. This approach
+is very time-consuming to evaluate and hard to leverage in a gen-
+eral gradient-based mesh optimization framework. Therefore, we
+only adopt it in this main experiment (Section 5 in the main paper)
+but used fixed values of  in the optimization process discussed in
+Section B (Figure 4 in the main paper) for completeness.
+
+   For the mesh reconstruction pipeline, we leverage the codebase
+of nvdiffrec6, and replace the image loss with depth and SDF
+losses described in the main paper. We also leverage the mask loss
+in nvdiffrec, and the two regularization losses Lsign and Ldev in
+Eqnuation 8 and Equation 9 from the main paper. We use L1 loss for
+mask, L2 norm for depth and MSE loss for SDF. We scale the mask
+
+4 https://github.com/czq142857/NDC
+5 https://github.com/czq142857/NDC/blob/9054e20f55013d031af9e3a2c91f5cab75837bc4/
+data_preprocessing/get_groundtruth_NDC/SDFGen
+6 https://github.com/NVlabs/nvdiffrec
+                                                                                                        Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:19
+
+Table 9. Quantitative results on Mesh Reconstruction. CD: Chamfer dis-                      MC
+
+tance (1e-5), F1: F1 score. ECD, edge chamfer distance (1e-2). EF1: edge F1.
+
+NV: Non-mainfold vertices, NE: Non-manifold edges, SI: self-intersection.
+IN>5: normal angle difference > 5. SA: small angle. # V: number of vertices.
+#F: number of triangles.
+
+323         CD F1  ECD  EF1  #V         #T NV(%)  NE(%)        SI(%)   IN>5(%)   SA<10(%) 
+                                                                 0.0       85.6       24.7
+            22.65 0.28 5.56 0.08 2387   4771 0.0       0.0     1.882      74.43       9.59
+                                                               0.232      72.60       0.77
+            17.15 0.38 4.82 0.11 2360   4775 0.131     0.349     0.0      66.61      11.74  DMTet
+            17.61 0.42 3.55 0.13 1877   3801 0.155     0.378     0.0      66.22      12.32
+MC                                                               0.0      61.21      12.72
+DMTet(32)   9.11 0.54 2.60 0.13 2573    5146 0.0       0.0     0.715      50.52       2.99
+DMTet(40)   11.56 0.52 3.64 0.17 1691
+FlexiCubes                              3387 0.0       0.0     SI(%)   IN>5(%)   SA<10(%) 
+643                                                              0.0      80.67      24.32
+            8.35 0.58 3.64 0.20 2626    5259 0.0       0.0      1.483     63.34       8.67
+            7.01 0.64 2.11 0.26 2400                            0.130     55.22       0.48
+                                        4800 0.0       0.0       0.0      52.37      11.90
+                                                                 0.0      50.20      14.41
+            CD F1  ECD  EF1  #V          #T    NV(%)   NE(%)     0.0      48.66      17.88  FlexiCubes
+MC          6.84 0.55 2.55 0.14 9881    19783     0.0     0.0   0.103     34.87       1.97
+DMTet(64)   5.90 0.61 3.80 0.23 9828    19769   0.043   0.139
+DMTet(80)   6.16 0.57 1.22 0.26 9828    19769   0.043   0.140  SI(%)   IN>5(%)   SA<10(%) 
+FlexiCubes                                                       0.0      77.23      24.25
+1283        6.33 0.66 1.25  0.25 10459  20801 0.0      0.0      1.280     53.98       7.95
+            7.50 0.66 3.77  0.28 6783                           0.084      43.2       0.37
+            5.17 0.66 3.59  0.29 10385  13566 0.0      0.0       0.0      42.56      12.46
+            4.87 0.70 0.71  0.43 9916                            0.0      48.86      23.52
+                                        20784 0.0      0.0      0.017     30.57       0.79
+ 
+MC                                      19843 0.0      0.0
+DMTet(128)
+FlexiCubes  CD F1  ECD  EF1  #V         #T NV(%)  NE(%) 
+
+            4.72 0.68 1.13  0.33 40164  80374   0.0     0.0
+            4.59 0.69 3.82  0.40 40128  80360  0.017   0.069
+            5.04 0.65 0.79  0.43 40129  80361  0.017   0.036
+
+            4.51 0.72 1.32  0.44 38645  77212 0.0      0.0                                              Pose A    Pose B  Pose C
+            4.98 0.74 1.50  0.39 23535
+            4.31 0.71 0.42  0.51 38923  47001 0.0      0.0
+
+                                        77845 0.0      0.0
+
+in the literature, we follow the definition in the PyVista7 codebase                        Fig. 25. We reconstruct the same model with three different poses. Marching
+in our evaluations.                                                                         Cubes performs well when features are axis-aligned, but show stair step
+                                                                                            artifacts in the other poses. DMTet performs more robustly, but produces
+   Min and max angles. Given a triangle on the extracted mesh, we                           many sliver triangles. FlexiCubes has more uniform triangles and no stair
+compute its three angles in degrees and select the max and min                              step artifacts.
+angles.
+                                                                                                        Ldev off          Ldev on
+   NV(%). The average percentage of non-manifold vertices.
+                                                                                            Fig. 26. Influence of the regularizer Ldev. The reconstructed shape with
+   NE(%). The average percentage of non-manifold edges.                                     Ldev has less visible seams compared to the result without Ldev applied.
+
+   SI(%). The average percentage of self-intersecting triangles.                               In Figure 25 we show how FlexiCubes robustly reconstructs the
+                                                                                            same object under different rotations. Note that the MC reconstruc-
+   SA<10. The average percentage of triangles with the smallest                             tion quality deteriorates when features are not axis-aligned. We
+angle <10.                                                                                  show the influence of the regularizer Ldev (Equation 8 in the main
+                                                                                            paper) in Figure 26.
+C.3 Adaptive Meshing
+                                                                                            D APPLICATIONS
+We provide experimental details for results demonstrated in Fig-
+ure 14 in the main paper. Our goal is to reconstruct the target object                      In this section, we provide a detailed description of the experimental
+with adaptive mesh resolution achieved by jointly optimizing mesh                           setting and additional results for each application we did in the main
+topology and the octree structure. We begin the optimization with                           paper.
+a low-resolution, uniform voxel grid. During optimization, we keep
+a running average of the objective loss for each cell, computed by                          D.1 Photogrammetry Through Differentiable Rendering
+averaging the loss from all mesh vertices extracted from it. After the
+shape converges, we subdivide the cells in the octree with objective                        Our photogrammetry application is based on nvdiffrec, which
+loss larger than a preset threshold of 0.04. Iterating this process, we                     jointly optimizes shape, materials, and lighting from image supervi-
+obtain the adaptive mesh shown in Figure 14 without precomputed                             sion [Hasselgren et al. 2022; Munkberg et al. 2022]. We followed the
+octree structure on GT geometry. Note that we apply the constraint
+described in Section A.2 during optimization.
+
+C.4 Additional Results
+
+We include more visual examples in Figure 27, comparing all meth-
+ods. Please zoom in the pdf to see the differences. Additional statistic
+are included in Table 9.
+
+7 https://docs.pyvista.org/api/core/_autosummary/pyvista.DataSet.compute_cell_
+quality.html
+1:20 · Shen et al.
+
+official codebase closely with minimal changes and only replaced         Note that, while we do not explicitly optimize skinning weights,
+the DMTet [2021] geometry extraction stage with FlexiCubes. We           each operation must be differentiable to enable end-to-end training.
+leverage the regularizer term, Ldev, of Equation 8 from the main         An interesting avenue for future work is to also include optimiza-
+paper with a factor  = 0.25 in all experiments. The regularizer,         tion of the skinning weights, but that would require a consistent
+Lsign, (Equation 9, main paper) is already present with DMTet in         parametrization, as vertices can be added or removed during opti-
+nvdiffrec. Additionally, we scale the silhouette mask loss of nvd-       mization as the topology evolve. This is similar to the texture pa-
+iffrec, with a factor,  = 5.0, to further emphasize geometry.            rameterization problem in nvdiffrec [2022] work, which is solved
+The combined objective function is:                                      by using 3D texturing (encoded in a MLP) during the topology
+                                                                         optimization phase.
+Ltotal =  Ldev + Lsign +  Lmask.                     (11)
+                                                                         D.3 3D Mesh Generation
+We leave the second pass of nvdiffrec (which performs light, ma-
+terial, and shape optimization with fixed topology) unmodified.          In the application of mesh generation, we adopt the recent state-
+                                                                         of-the-art 3D generative model GET3D [Gao et al. 2022], and show
+   We show shaded results and mesh illustrations in Figure 28 for        that FlexiCubes as a plug-and-play differentiable mesh extraction
+the entire NeRF dataset.                                                 module can produce significantly improved mesh quality.
+
+D.2 Mesh Simplification of Animated Objects                                 GET3D [Gao et al. 2022] is a learning-based model trained on
+                                                                         2D images, and can directly synthesize high-quality textured 3D
+We extend our photogrammetry application (from Section D.1) by           meshes at inference time. The framework combines classic genera-
+adding support for mesh based, synthetic, datasets with skinned          tive adversarial networks [Karras et al. 2019, 2020], differentiable
+animations. In practice, we use the skinning provided by Universal       iso-surfacing [Shen et al. 2021] and differentiable rasterization-based
+Scene Description (USD) [2016] and source our animated meshes            rendering [Laine et al. 2020]. Given a sampled noise vector from
+from RenderPeople [2020]. We achieve mesh simplification by us-          a Gaussian distribution, the generator of GET3D predicts a signed
+ing a coarse FlexiCubes grid (323) and optimize geometry using           distance field. Then, a mesh is extracted by DMTet [Shen et al. 2021],
+image supervision. In this application, we assume that the skeleton      and a differentiable renderer renders one RGB image and one 2D
+animation and reference skinning weights are known, and the task         silhouette, which are fed into 2D discriminators to classify whether
+at hand is to learn a simplified mesh, and retarget the animation        they are real or fake. The differentiable iso-surfacing module enables
+using the same skeleton, without manual adjustments.                     the ability to directly generate meshes, and also largely affects the
+                                                                         quality of the produced meshes.
+   Mesh simplification using only the T-pose is straightforward
+and can be done in nvdiffrec out of the box, with either DMTet              In this application, we replace the DMTet module with Flexi-
+or FlexiCubes for the topology extraction step. In each iteration,       Cubes. In particular, we modify the last layer of the 3D generator
+we pick a random viewpoint and optimize the parameters using             in GET3D to output the SDF and deformation for each vertex, and
+photometric loss. We then re-skin the reconstructed, simplified mesh     additionally generate 21 weights for every cube defined in Flex-
+in a post-processing step as follows: for each vertex in the simplified  iCubes, including the 8 vertex weights, 12 edge weights, and the
+mesh, we find the k-nearest neighbors ( = 10) in the reference mesh      remaining 1 parameter for quad splitting. FlexiCubes is adopted
+and use inverse distance weighting to compute skinning weights           to differentiably extract meshes, and the remaining architecture,
+for the simplified vertex. More formally, given a vertex, vlod, in the   training procedure and other hyperparameters of GET3D are kept
+simplified mesh and the k-nearest neighbors, vref , and their skinning   unchanged following the official released implementation8. We fol-
+weights, ref , from the reference mesh, the skinning weight, lod,        low GET3D and train the 3D generative model on ShapeNet [Chang
+for the simplified mesh is computed as:                                  et al. 2015] Car, Chair and Motorbike categories using the same
+                                                                         dataset rendering pipeline and train/validation/test split released
+ vref , vlod                            1                                by the official implementation. Note that the architecture changes
+                    = max(10-3, vref - vlod 2)                           happen only at the last layer of the generator while the rest of the
+                                                                         backbone remains the same. Thus, the computational overhead of
+                    lod =    vref , vlod ref         (12)                the modification is relatively negligible. We include more qualitative
+                                                  .                      visualization in Figure 29.
+
+                             vref , vlod                                 D.4 Physics Simulation
+
+   Performing end-to-end mesh simplification over the animation          FlexiCubes enables extracting tetrahedral meshes with well-defined
+is more challenging. We first optimize for 300 iterations using the      topology, which can be directly utilized in physical simulation. It can
+T-pose, as described above, to get a reasonable initial guess for ge-    be further combined with differentiable physical simulation frame-
+ometry. We then enable the animation and optimize for random             works [Hu et al. 2020; Jatavallabhula et al. 2021] and differentiable
+viewpoints and random animation frames. For this to work, our            rendering pipelines [Chen et al. 2019a; Laine et al. 2020; Munkberg
+pipeline must support animation of a mesh with changing topology         et al. 2022] to optimize shape, material and physical parameters
+in a consistent way with gradients propagating back to the topology      from multi-view videos. We have shown two examples in teaser and
+representation. In each iteration we re-skin the FlexiCubes mesh us-
+ing a differentiable version of the same k-nearest neighbor method       8 https://github.com/nv- tlabs/GET3D
+outlined in Equation 12, and animate the re-skinned mesh using
+the differentiable skinning approach of Hasselgren et al. [2021].
+                                                                                 Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:21
+
+Figure 24 in the main paper. In this subsection, we talk about the                  It is worth mentioning that when extracting the tetrahedral mesh,
+details of our physical simulation experiments.                                  some tetrahedra can have tiny volume, which could lead to un-
+                                                                                 stable physical simulation due to numerical issues. Therefore, we
+Ground Truth Generation. We first prepare multi-view ground                      conduct a tetrahedra filtering process after tetrahedral mesh ex-
+                                                                                 traction. Specifically, we check the volume of each tetrahedron and
+truth videos with FlexiCubes. Given a surface mesh, we apply Flex-               remove the one whose volume is less than a threshold (2 -7 for a
+                                                                                 shape normalized in (-0.45, 0.45)). We find this step significantly
+iCubes to learn the shape with 3D supervision, as well as employing              improves the stability of the physics simulation, though at the cost
+                                                                                 of introducing some slits of the shape, as shown in Figure 30. We
+texture field [Müller et al. 2022; Munkberg et al. 2022] to learn the            hope this can be further addressed by designing new regularization
+                                                                                 terms, which we leave for future work. In Figure 30, we provide
+texture map from multi-view 2D images (Section 6.1 in the main                   more details of the physics simulation examples in the teaser and
+                                                                                 Figure 24.
+paper). FlexiCubes supports directly exporting a tetrahedral mesh.
+
+We then send it to the physical simulation framework. Here we
+adopt a low-res grid (323 resolution) to extract the tetrahedral mesh
+
+such that the physical simulation can be more efficient. We choose
+
+to use GradSim [Jatavallabhula et al. 2021], a differentiable physics
+
+simulation framework which has shown both forward simulation
+
+and derivatives w.r.t. the physical parameters in the backward pass.
+
+We focus on FEM simulation and use neo-Hookean elasticity to
+
+model elastic objects during the simulation. During the forward
+
+simulation, we fix the two ending points of an object, letting it drop
+
+and  deform  under  gravity.  We  choose  time  step  as    1     and  set  the
+                                                          8192
+
+mass density  = 0.5, For the Lamé parameters, , , which control
+
+the element's resistance to shearing and volumetric strains, we set
+
+ = 1000,  = 1000, and a damping coefficients  = 1.5 for the
+
+example in the teaser. For Figure 24 in the main paper, we choose
+
+ = 0.3,  = 1000,  = 1000,  = 1.5. With the deformed meshes,
+
+we then employ the differentiable rendering pipeline [Laine et al.
+
+2020] to render them into images and composite into videos. We
+
+generate videos with 512 views, where we randomly set circular
+
+camera positions around the object. Note here we do not render
+
+images at all the time steps, but instead, we choose video fps as 64.
+
+   Training. Given multi-view video sequences, we then optimize
+shape, texture, and physical materials from the video input only.
+As a challenging task, it is extremely hard to jointly optimize ge-
+ometry and physical parameters together. In practice, we find FEM
+simulation is quite unstable, e.g., joint optimization always has
+NaN values and crashed in the training. Therefore, following recent
+work [Anonymous 2023] (one anonymous ICLR submission 2023
+at the time of our submission), we optimize the shape, texture, and
+physical parameters in a two-stage manner.
+
+   First, we apply the beginning frame of the video to optimize the
+shape and texture only. We assume the object doesn't deform in
+the first frame. Therefore, it is equivalent to a rigid-body mesh
+reconstruction (Section 6.1 in the main paper). We use the same
+losses but slightly tune the weights (we set  = 1.0 and  =
+10.0). The first-stage optimization allows us to start from an descent
+shape to make the physical parameter optimization easier.
+
+   In the second stage, we start from the initial guess of the mass
+density (we initialize it as  = 1.5) and apply GradSim [Jatavallab-
+hula et al. 2021] to compute the gradients of the video loss w.r.t. to
+the mass density. At each iteration, we send the tetrahedral mesh
+to GradSim and execute forward simulation to deform the shape.
+Then, we render the deformed shape into images and compare them
+with the ground truth images. We use the same loss as in the first
+stage and backpropagate it to the mass density. We use a different
+learning rate schedule here. At the beginning, we use the learning
+rate 0.1 and decay it 10 times smaller every 50 iterations). The whole
+optimization converges in 200 iterations.
+1:22 · Shen et al.
+
+MCSDF               DChermite  NDCSDF   MC  DMTet                         FlexiCubes  Reference
+
+       Surface extractions from GT SDF      Differentiable iso-surfacing
+
+Fig. 27. Visual comparison of a set of iso-surfacing techniques. The three leftmost examples: Marching Cubes (MCSDF), Dual Contouring, Neural Dual
+Contouring, use surface extraction from the GT SDF. The next three examples: Marching Cubes, Deep Marching Tetrahedra, and FlexiCubes, use differentiable
+iso-surfacing. The grid resolution is 643 for all methods except DMTet, which uses 803 tetrahedral grid to match the triangle count in output meshes.
+                                                      Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:23
+
+Chair                                      Drums
+
+Ficus                                      Hotdog
+
+Lego                                       Materials
+
+Mic                                        Ship
+
+       Shaded  DMTet FlexiCubes Reference             Shaded  DMTet FlexiCubes Reference
+
+Fig. 28. Geometry breakdown for all scenes of the original NeRF dataset. We compare to the original nvdiffrec implementation using DMTet. Note that
+FlexiCubes offers more uniform tessellation, while being better capturing small details, as seen in the Lego scene.
+1:24 · Shen et al.
+                                  Fig. 29. Qualitative textured mesh generation combining FlexiCubes with GET3D [Gao et al. 2022].
+                                                 Flexible Isosurface Extraction for Gradient-Based Mesh Optimization · 1:25
+
+                                  = 0.0   = 0.9   = 1.5
+
+Init. = 0.500  = 0.511  = 1.500
+
+Opt.
+
+Ref.
+
+                                  = 0.0   = 1.0   = 1.8
+
+Init. = 0.300  = 0.311  = 1.500
+
+Opt.
+
+Ref.
+
+Fig. 30. Geometry details of the tetrahedral meshes in the physical simulation experiment. FlexiCubes generates tetrahedral meshes with well-defined
+topology which can be directly utilized in physical simulation. We further bridge it with differentiable physical simulation and differentiable rendering
+frameworks to optimize shape, texture, and physical parameters from multi-view videos. In the two examples, we optimize the mass density  of the object
+and get very close parameters after converging. We also show the wireframe of the deformed objects. To apply the extracted tetrahedral meshes in physical
+simulation, we delete tetrahedrons with tiny volume. This results in some spiky parts of the shape, e.g., the shape has some black slits. We find without
+deleting small tetrahedrons leads to unstable simulation results. This problem can be potentially addressed by designing new regularization terms, which we
+leave for future work.
+
