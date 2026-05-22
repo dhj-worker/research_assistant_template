@@ -1,6 +1,6 @@
 ---
 name: paper-notes
-description: Manage this local paper-reading workspace. Use for Korean commands such as "논문 정리", "새 논문 정리", "<keyword> 논문 정리", "논문 요약", "<keyword> 논문 요약", "논문 업데이트", "<keyword> 논문 공부", "<keyword> 논문 토의", or "<keyword> 논문 대화"; select PDFs from papers/, create summaries in summary/, maintain summary/INDEX.md, and append follow-up Q&A.
+description: Manage this local paper-reading workspace. Use for Korean commands such as "논문 정리", "새 논문 정리", "<keyword> 논문 정리", "논문 요약", "<keyword> 논문 요약", "논문 업데이트", "<keyword> 논문 공부", "<keyword> 논문 토의", "<keyword> 논문 토론", or "<keyword> 논문 대화"; select PDFs from papers/, create summaries in summary/, maintain summary/INDEX.md, and append follow-up Q&A.
 ---
 
 # Paper Notes
@@ -71,7 +71,7 @@ Rules:
 
 ## Command: 논문 정리
 
-Examples:
+Also treat these as the same command:
 
 - `논문 정리`, `새 논문 정리`, `논문 요약`, `새 논문 요약`
 - `<keyword> 논문 정리`, `<keyword> 논문 요약`
@@ -102,6 +102,10 @@ Summary workflow:
 Do not leave the final summary partial unless the user stops the work or a blocker prevents completion. Use temporary placeholders such as `작성 중` or `확인 필요` only while work is in progress.
 
 ## Command: `<keyword> 논문 대화`
+
+Also treat these as the same command:
+
+- `<keyword> 논문 공부`, `<keyword> 논문 토의`, `<keyword> 논문 토론`
 
 Use `<keyword>` as the same fuzzy paper selector described above.
 
