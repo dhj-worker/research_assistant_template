@@ -348,3 +348,13 @@ VGGT는 원래 one/few/many view에서 camera parameter, depth map, point map, t
 **답변**
 
 맞다. ReconViaGen 본문에 드러난 학습 절차 기준으로는 VGGT fine-tuning loss에 GGC/PVC나 TRELLIS generation 결과를 직접 평가하는 loss가 들어가지 않는다. VGGT fine-tuning objective는 $L_{\mathrm{camera}}+L_{\mathrm{depth}}+L_{\mathrm{pmap}}$뿐이며, 이는 object domain에서 camera/depth/point map prediction을 개선하기 위한 supervised reconstruction loss다. 따라서 “VGGT feature가 TRELLIS condition으로 더 적합해진다”는 표현은 직접적인 generation-conditioned optimization이 아니라 간접적인 효과로 이해해야 한다. 더 정확히는 object-domain LoRA fine-tuning으로 VGGT 내부 feature가 object-centric geometry prediction에 더 잘 맞게 되고, 이후 freeze된 VGGT feature를 Condition Net이 $T_g$와 $\{T_k\}$로 변환하며, Condition Net과 TRELLIS DiT가 CFM/generation objective 아래에서 이 feature를 condition으로 사용하는 법을 학습한다. 원문도 SS Flow training에서 VGGT layer를 freeze하고 Condition Net을 DiT와 함께 학습한다고 말한다. 그러므로 VGGT 자체가 “GGC/PVC로 변환되어 generation을 잘 제어하도록” end-to-end로 fine-tuned된 것은 아니며, VGGT는 object geometry prior provider, Condition Net/TRELLIS는 그 prior를 generative condition으로 소비하는 adapter/generator 쪽으로 보는 것이 더 정확하다.
+
+### 2026-05-22 19:17 - 학습 자원과 TRELLIS 활용 방식
+
+**질문**
+
+학습에 소요된 자원은 얼만큼인지? VGGT는 LoRA finetuning만 했고, TRELLIS는 어떻게 활용했는지?
+
+**답변**
+
+논문이 명시한 학습 데이터는 Objaverse 390k 3D data이며, object mesh당 $512 \times 512$ 해상도의 다수 view를 render한다. 본문은 fine-tuning용으로 object당 60 views를 쓴다고 설명하고, implementation detail에서는 object당 150 images에서 VGGT fine-tuning 때 1--4 views를 random sample한다고 설명한다. LoRA 설정은 VGGT aggregator와 TRELLIS transformer 모두 rank 64, alpha 128, dropout 0이며, adapter는 각 attention layer의 qkv mapping layer와 projector에만 붙인다. VGGT aggregator fine-tuning은 AdamW, learning rate $10^{-4}$를 사용하지만, VGGT 단독 fine-tuning에 든 GPU 수나 step 수는 별도로 명확히 제시되지 않는다. 명시된 큰 compute는 TRELLIS transformer fine-tuning으로, 8 x NVIDIA A800 80GB, batch size 192, 40k steps, AdamW learning rate $10^{-4}$, CFG drop rate 0.3이다. Inference에서는 SS generation CFG 7.5, SLAT generation CFG 3.0, sampling step 30/12, RVC coefficient $\lambda=0.1$을 사용한다. TRELLIS는 frozen black-box generator로만 쓰인 것이 아니라, pretrained TRELLIS의 SLAT representation, SS Flow, SLAT Flow, decoder 구조를 기반으로 하되 VGGT-derived condition을 받도록 transformer/condition path를 LoRA fine-tuning한 것으로 읽힌다. 특히 GGC는 SS Flow의 coarse sparse structure generation을 condition하고, PVC는 SLAT Flow의 fine geometry/texture generation을 condition한다. Appendix ablation은 SS Flow와 SLAT Flow condition form을 각각 40k steps로 train한 결과를 제시하므로, 최종 방법도 TRELLIS의 두 flow를 reconstruction-based condition에 맞춰 fine-tune한 방식으로 보는 것이 자연스럽다. 다만 본문 implementation 문장은 "SS Flow transformer"를 특히 명시하고, VGGT 단독 학습 자원과 SLAT Flow 전체 학습 세부를 완전히 분리해 보고하지는 않는다.

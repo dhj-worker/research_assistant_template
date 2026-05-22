@@ -254,3 +254,54 @@ SAM 3D의 가장 큰 contribution은 architecture 단독이 아니라 data engin
 
 ## 추가 질문과 답변
 
+### 2026-05-22 19:56 - Object representation과 latent의 출처
+
+**질문**
+
+SAM 3D에서 사용한 object representation이나 latent는 어떻게 구성되는가? 이는 완전히 독자적인 설계인가, 아니면 특정 연구로부터 영감을 받았는가?
+
+**답변**
+
+SAM 3D의 object representation은 크게 두 단계로 나뉜다. 첫 번째 Geometry model은 coarse shape와 layout을 함께 생성한다. 논문에서 coarse shape는 $O \in \mathbb{R}^{64^3}$인 voxel latent로 표현되며, 이와 함께 rotation $R \in \mathbb{R}^{6}$, translation $t \in \mathbb{R}^{3}$, scale $s \in \mathbb{R}^{3}$를 직접 생성한다. Appendix C.1에 따르면 shape는 더 coarse한 $16^3 \times 8$ latent representation에서 denoising되어 $64^3$ voxel 형태로 다뤄지고, shape는 4096개 token, $R,t,s$는 각각 1개 token으로 Mixture-of-Transformers에 입력된다. 즉 SAM 3D의 첫 representation은 "3D object shape latent + explicit camera-relative layout parameter"의 결합이다.
+
+두 번째 Texture & Refinement model은 Geometry model이 예측한 coarse shape $O$에서 active voxel을 추출한 뒤, sparse latent flow transformer로 geometric detail과 texture를 refine한다. 이 단계의 latent는 SLAT, 즉 structured 3D latent 계열이며, 최종 latent는 VAE decoder를 통해 mesh decoder $D_m$ 또는 3D Gaussian splat decoder $D_g$로 decode될 수 있다. 두 decoder는 같은 VAE encoder와 structured latent space를 공유한다.
+
+따라서 이 설계는 완전히 독자적인 representation이라기보다는 Xiang et al. (2025), 즉 TRELLIS의 "Structured 3D Latents for Scalable and Versatile 3D Generation"을 강하게 기반으로 한다. 본문 Section 2.2가 명시적으로 "recent SOTA two-stage latent flow matching architectures (Xiang et al., 2025)" 위에 구축했다고 설명하고, Appendix C.1도 shape latent가 Xiang et al. (2025)를 따른다고 쓴다. Texture & Refinement 쪽 sparse latent flow transformer와 SLAT feature objective, mesh/Gaussian decoder 공유 latent space 역시 Xiang et al. (2025)에 기반한다.
+
+SAM 3D의 독자적인 부분은 representation 자체를 처음 발명했다기보다는, 그 representation을 real-world object reconstruction에 맞게 확장한 쪽에 가깝다. 구체적으로는 isolated object reconstruction이 아니라 full image context와 object mask를 함께 condition하고, layout $(R,t,s)$를 shape와 함께 생성하며, MoT 구조로 shape token과 layout token 사이의 정보 공유를 설계한다. 또한 기존 SLAT VAE의 back-projection이 occluded voxel까지 feature를 넣어 sharpness를 낮춘다고 보고, visible voxel에만 depth-aware back-projection을 수행하는 Depth-VAE 변형을 추가한다. 요약하면 latent backbone은 TRELLIS/Xiang et al. 2025 계열이고, SAM 3D의 novelty는 여기에 real-world visual grounding, layout prediction, pointmap conditioning, Depth-VAE 수정, MITL/artist data engine과 post-training alignment를 결합한 데 있다.
+
+### 2026-05-22 19:59 - Pictorial cue 논의
+
+**질문**
+
+pictorial cue 논의에 대해 설명해.
+
+**답변**
+
+SAM 3D에서 pictorial cue 논의는 "단일 이미지에서 어떻게 3D를 알 수 있는가?"라는 오래된 지각 심리학/컴퓨터 비전 문제를 모델 설계의 정당화로 가져오는 부분이다. 전통적인 3D vision은 multi-view geometry, stereo, SfM처럼 여러 시점의 대응점과 parallax를 주된 3D signal로 보았다. 반면 인간은 한 장의 그림이나 사진만 보고도 깊이, 표면 방향, 물체의 완전한 형태를 상당히 잘 추론한다. 이때 단일 이미지 안에 들어 있는 3D 단서들을 psychology textbook에서는 pictorial cues라고 부른다.
+
+논문이 말하는 pictorial cue에는 shading, texture pattern, silhouette, occlusion, perspective 같은 low/mid-level visual cue뿐 아니라 recognition cue도 포함된다. 특히 저자들이 강조하는 것은 familiar object cue다. 예를 들어 이미지에서 다리 하나가 가려진 의자를 보면, 실제 pixel에는 보이지 않아도 의자라는 recognition이 작동하면서 대략적인 3D structure, symmetry, missing part, pose를 추론한다. 논문은 이를 "recognition enables 3D reconstruction"이라는 문장으로 요약한다.
+
+이 관점은 SAM 3D의 architecture와 training에 직접 연결된다. 모델은 object crop만 보는 것이 아니라 full image도 함께 encode한다. crop은 local detail과 mask-following에 유리하지만, full image는 object category, scene context, support relation, occlusion pattern 같은 recognition cue를 준다. 즉 SAM 3D는 3D reconstruction을 pure geometry inversion으로만 보지 않고, visual recognition prior를 활용한 conditional generation 문제로 본다.
+
+중요한 함의는 full 3D reconstruction이 관측된 visible surface의 단순 복원이 아니라는 점이다. 단일 이미지는 본질적으로 lossy projection이므로 backside, occluded part, true metric shape는 관측만으로 결정되지 않는다. 따라서 SAM 3D가 출력하는 것은 확정적 정답이라기보다 image와 mask, context, learned object prior에 조건화된 plausible 3D sample이다. 논문이 $p(S,T,R,t,s \mid I,M)$ 같은 conditional distribution을 설정하는 이유도 여기에 있다.
+
+Robotics 관점에서는 이 논의가 양날의 칼이다. familiar object cue는 occlusion이 심한 real-world scene에서 useful prior를 제공해 manipulation candidate, pose proposal, simulation asset bootstrapping에 도움이 된다. 하지만 recognition prior는 hallucination도 만든다. 보이지 않는 뒷면이나 접촉 상태, 내부 구조, 물리적 안정성은 모델이 "그럴듯하게" 채우는 것이지 센서로 확인한 사실이 아니다. 따라서 robot deployment에서는 SAM 3D의 pictorial-cue 기반 reconstruction을 final geometry truth가 아니라 strong semantic-geometric prior로 다루고, depth, tactile sensing, multi-view verification, physics/collision checking으로 보정하는 편이 안전하다.
+
+### 2026-05-22 20:02 - Semantic 정보와 object category 출력 여부
+
+**질문**
+
+그러면 SAM 3D는 생성한 object에 대한 semantic 정보도 포함하나? 즉, 물체의 카테고리를 맞출 수 있나?
+
+**답변**
+
+논문 기준으로는 SAM 3D가 semantic information을 "사용"한다고 말할 수는 있지만, 생성 결과에 explicit semantic label을 "출력"한다고 보기는 어렵다. SAM 3D의 공식 output은 shape $S$, texture $T$, rotation $R$, translation $t$, scale $s$이고, Geometry model도 $p(O,R,t,s \mid I,M)$를, Texture & Refinement model도 $p(S,T \mid I,M,O)$를 모델링한다. 여기에는 object category token이나 class label prediction head가 포함되어 있다고 설명되지 않는다.
+
+다만 semantic recognition은 pipeline 안에서 매우 중요하다. 입력 encoding에서 full image context를 쓰는 이유가 cropped view에 없는 global scene context와 recognition cue를 얻기 위해서이고, 데이터 엔진도 VLM 기반 object recognition으로 object-level annotation을 만들고, LVIS 기반 3D-oriented taxonomy로 object distribution을 관리한다. Appendix A.1에서는 object category label을 보존하고 데이터 엔진을 통과하는 category distribution을 모니터링한다고 설명한다. 즉 category는 training data sourcing, balancing, annotation management에는 존재한다.
+
+따라서 SAM 3D가 물체의 카테고리를 "내부적으로 맞추는 듯한" representation을 갖고 있을 가능성은 높다. 의자처럼 생긴 geometry와 texture를 만들려면 DINOv2/full-image context와 learned prior 안에 category-level semantics가 반영되어야 하기 때문이다. 하지만 이것은 implicit semantic representation이지, 논문이 평가하거나 보장하는 explicit classification output은 아니다.
+
+실제로 category를 얻고 싶다면 두 가지 접근이 더 자연스럽다. 첫째, SAM 3D 앞단의 detector, VLM, open-vocabulary segmentation/referring model에서 category/description을 가져온다. 둘째, SAM 3D가 생성한 mesh/rendering을 다시 CLIP/VLM/3D classifier에 넣어 category를 추론한다. 후자는 가능하지만 SAM 3D 자체의 주된 task가 아니므로 category accuracy가 논문에서 검증된 것은 아니다.
+
+Robotics 관점에서는 이 차이가 중요하다. SAM 3D output이 "cup-like geometry"를 만들었다고 해서 그것이 symbolic scene graph의 `cup` label을 신뢰도 있게 제공한다는 뜻은 아니다. manipulation pipeline에서는 SAM 3D를 geometry/layout prior로 쓰고, semantic label은 별도의 perception module 또는 VLM grounding 결과와 fuse하는 구성이 더 안전하다.
