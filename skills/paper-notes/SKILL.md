@@ -10,6 +10,8 @@ Use this skill for the local workspace:
 - PDFs: `papers/`
 - Summaries: `summary/`
 - Index: `summary/INDEX.md`
+- Research map: `summary/RESEARCH_MAP.md`
+- Research cards: `summary/research_cards/<stem>.md`
 - Extracted text cache: `extracted_text/<stem>/full.txt`
 - Optional template: `templates/paper_summary.md`
 
@@ -97,7 +99,8 @@ Summary workflow:
 5. Extract the abstract and write sentence-by-sentence English/Korean translation immediately.
 6. Fill the summary top-down: metadata, reconstructed table of contents, technical summary, experiments, limitations, robotics relevance.
 7. Update `summary/INDEX.md`.
-8. Commit and push the completed summary and index. Report changed summary, index, and extracted-text paths.
+8. Invoke the project `research-map` skill from `skills/research-map/SKILL.md` to add or update this paper's card file in `summary/research_cards/`, add or update its link row in `summary/RESEARCH_MAP.md`, add only high-confidence direct relations supported by the completed summary, and add any clearly reusable theme/gap/research-question notes.
+9. Commit and push the completed summary, index, research map, research card, and extracted text. Report changed summary, index, research-map, research-card, and extracted-text paths.
 
 Do not leave the final summary partial unless the user stops the work or a blocker prevents completion. Use temporary placeholders such as `작성 중` or `확인 필요` only while work is in progress.
 

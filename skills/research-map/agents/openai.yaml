@@ -1,0 +1,7 @@
+interface:
+  display_name: "Research Map"
+  short_description: "Maintain research-map links, per-paper cards, relations, gaps, and questions."
+  default_prompt: "Use $research-map to update summary/RESEARCH_MAP.md for this workspace."
+
+policy:
+  allow_implicit_invocation: true
