@@ -297,3 +297,23 @@ TRELLIS2의 contribution은 “더 큰 3D generator”보다는 “native 3D ass
 TRELLIS 대비 핵심 개선은 multiview 2D feature 기반 SLAT에서 native O-Voxel 기반 latent로 옮겨갔다는 점, 그리고 geometry와 material generation을 같은 3D latent domain에서 직접 수행한다는 점이다. 실험 결과는 reconstruction fidelity, image-to-3D generation, user study, PBR texture synthesis에서 강하다. 다만 simulation-ready asset, robotics manipulation asset, physically valid material까지 보장하려면 mesh validation, scale/physics annotation, articulation/affordance modeling이 추가로 필요하다.
 
 ## 추가 질문과 답변
+
+### 2026-05-22 22:14 - TRELLIS 대비 핵심 개선
+
+**질문**
+
+TRELLIS 대비 핵심 개선이 무엇인가? summary에 TRELLIS 정리 내용을 참고하여 대답해.
+
+**답변**
+
+TRELLIS2의 핵심 개선은 TRELLIS의 SLAT를 단순히 더 크게 만든 것이 아니라, SLAT의 근본적인 source와 표현 대상을 바꾼 데 있다. TRELLIS는 sparse 3D grid 위에 DINOv2 multiview visual feature를 aggregate해서 local latent를 만들고, 이를 Gaussian, Radiance Field, mesh로 decoding하는 versatile latent를 제안했다. 반면 TRELLIS2는 mesh와 PBR material에서 직접 O-Voxel을 만들고, 이를 SC-VAE로 compact structured latent에 압축한다. 즉 TRELLIS가 2D foundation feature 기반의 3D latent라면, TRELLIS2는 native 3D asset 기반의 geometry/material latent다.
+
+첫 번째 개선은 representation fidelity다. TRELLIS의 SLAT는 appearance-rich하고 multi-format decoding이 가능하지만, multiview 2D feature와 rendering supervision에 의존한다. TRELLIS2는 O-Voxel의 Flexible Dual Grid로 open surface, non-manifold surface, fully-enclosed surface를 직접 표현한다. Field-based mesh decoder나 SDF/FlexiCubes 계열이 약한 arbitrary topology를 더 정면으로 다루는 셈이다.
+
+두 번째 개선은 material modeling이다. TRELLIS는 geometry와 texture appearance를 latent에 담고 Gaussian/RF/mesh decoder로 꺼낼 수 있지만, reference image의 lighting이나 highlight가 baked-in될 수 있고 PBR material prediction은 명시적 한계이자 future work로 남아 있었다. TRELLIS2는 base color, metallic, roughness, opacity를 O-Voxel의 volumetric surface attribute로 encode한다. 그래서 relighting 가능한 PBR asset generation을 모델 목표 안에 넣었다.
+
+세 번째 개선은 compactness와 scalability다. TRELLIS는 $64^3$ sparse grid와 평균 약 $20K$ active voxel을 사용하는 SLAT를 중심으로 하고, generation 효율을 위해 convolutional packing과 sparse transformer 설계를 사용한다. TRELLIS2는 SC-VAE의 sparse residual autoencoding으로 $16\times$ spatial compression을 달성해 $1024^3$ asset을 약 $9.6K$ token으로 encode한다고 보고한다. 이 compact latent 덕분에 high-resolution generation과 4B 규모 flow model scaling이 더 현실적인 비용으로 가능해진다.
+
+네 번째 개선은 generation pipeline의 범위다. TRELLIS는 sparse structure generation과 local latent generation의 two-stage rectified flow 구조다. TRELLIS2는 이를 sparse structure, geometry latent, material latent의 세 stage로 확장한다. 특히 material generation이 generated geometry latent에 condition되므로, shape-material alignment와 internal/enclosed surface material synthesis를 더 직접적으로 다룰 수 있다.
+
+다만 trade-off도 있다. TRELLIS의 장점은 하나의 SLAT에서 Gaussian, Radiance Field, mesh를 선택적으로 decoding하는 output versatility와 local editing이다. TRELLIS2는 이보다 native mesh/PBR asset fidelity와 compactness에 더 초점을 둔다. 따라서 핵심 개선을 한 문장으로 요약하면, TRELLIS2는 TRELLIS의 versatile SLAT 아이디어를 native 3D/PBR representation으로 재설계해 topology, material, compression, high-resolution scaling을 강화한 후속 작업이다.
