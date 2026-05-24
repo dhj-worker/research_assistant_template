@@ -1,0 +1,7 @@
+interface:
+  display_name: "Research Start"
+  short_description: "Start focused research from the research map, cards, and summaries."
+  default_prompt: "Use $research-start to begin a focused research analysis from this workspace."
+
+policy:
+  allow_implicit_invocation: true

@@ -4,14 +4,21 @@
 
 논문 정리와 논문 대화 작업의 세부 규칙은 `skills/paper-notes/SKILL.md`를 단일 source of truth로 삼는다.
 
+논문 간 관계 지도와 연구 흐름 메모의 세부 규칙은 `skills/research-map/SKILL.md`를 단일 source of truth로 삼는다.
+
+특정 논문이나 주제로 연구 분석을 시작하는 세부 규칙은 `skills/research-start/SKILL.md`를 단일 source of truth로 삼는다.
+
 이 프로젝트의 커스텀 스킬은 전역 로컬 스킬 폴더(`~/.codex/skills`)에 설치하지 않는다. 앞으로 관련 스킬을 만들거나 수정할 때는 반드시 이 저장소의 `skills/` 폴더 안에 둔다.
 
 ## 기본 폴더
 
 - 입력 PDF: `papers/`
 - 요약 Markdown: `summary/`
+- 연구 지도: `summary/RESEARCH_MAP.md`
+- 논문 카드: `summary/research_cards/`
+- 연구 진행 노트: `summary/research_threads/`
 - 템플릿: `templates/paper_summary.md`
-- 프로젝트 스킬: `skills/paper-notes/`
+- 프로젝트 스킬: `skills/paper-notes/`, `skills/research-map/`, `skills/research-start/`
 
 `papers/`는 로컬 연동 폴더라 git remote repository에 push되지 않는다.
 
@@ -70,6 +77,18 @@
 
 스킬이 현재 세션에서 자동 로드되지 않는 경우, 이 저장소의 `skills/research-map/SKILL.md`를 직접 읽고 그 절차를 따른다.
 
+사용자가 다음과 같은 요청을 하면 `research-start` 스킬을 사용한다.
 
+- `연구 시작`
+- `<keyword> 연구 시작`
+- `<keyword>로 연구하자`
+- `연구 방향 찾자`
+- `아이디어 발굴`
+- `연구 질문 만들자`
+- `실험 계획 세우자`
+
+사용자의 첫 프롬프트에 연구 초점, 목표, 관점이 충분하면 바로 진행하고, 부족하면 필요한 정보를 간단히 되묻는다.
+
+스킬이 현재 세션에서 자동 로드되지 않는 경우, 이 저장소의 `skills/research-start/SKILL.md`를 직접 읽고 그 절차를 따른다.
 
 파일을 만들거나 수정한 뒤에는 변경한 파일 경로를 사용자에게 알려준다.
