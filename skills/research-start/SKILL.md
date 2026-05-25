@@ -16,9 +16,25 @@ Work directly as the user's research assistant. Do not create API scripts, serve
 - Paper summaries: `summary/*.md`
 - Index: `summary/INDEX.md`
 - Research threads: `summary/research_threads/<topic-slug>.md`
+- Paper source cache: `extracted_text/<summary-stem>/full.txt`
+- Original PDFs: `papers/<paper filename>.pdf`
 - Project research-map skill: `skills/research-map/SKILL.md`
 
 Exclude `summary/INDEX.md`, `summary/RESEARCH_MAP.md`, files under `summary/research_cards/`, and files under `summary/research_threads/` from the set of paper summaries.
+
+## Source Priority
+
+This is a local paper-reading workspace. Prefer local sources before any external lookup.
+
+Use sources in this order:
+
+1. `summary/RESEARCH_MAP.md` for already confirmed cross-paper relations.
+2. `summary/research_cards/<summary-stem>.md` for compact per-paper facts.
+3. `summary/<summary-stem>.md` for detailed local notes and extracted evidence.
+4. `extracted_text/<summary-stem>/full.txt` when exact claims, baselines, limitations, equations, or relation evidence need confirmation.
+5. `papers/<paper filename>.pdf` only when the text cache is missing, incomplete, or a figure/table must be checked from the original paper.
+
+Do not browse the web for papers that already have local summaries, cards, extracted text, or PDFs unless the user explicitly asks for external checking, the task requires the latest post-summary status such as code/model release availability, or a local source is missing/stale and the gap matters. If external lookup is used, label it as external metadata and keep it secondary to local evidence.
 
 ## Writing Profile
 
@@ -148,7 +164,7 @@ For the selected papers, extract:
 - Limitation or unsupported assumption.
 - Relevance to the current research goal.
 
-Prefer paper cards first, then summaries. Use extracted text only when necessary.
+Prefer paper cards first, then summaries. Use extracted text when the summary/card is too thin, when exact evidence matters, or when a relation/limitation should be verified against the paper. Use the original PDF only if the text cache cannot answer the question.
 
 ### 6. Identify Repeating Tensions
 
@@ -202,8 +218,9 @@ If no direction is clearly best, present 2-3 candidates and ask the user to choo
 
 ## Output Discipline
 
-- Ground claims in `RESEARCH_MAP.md`, paper cards, summaries, or extracted text.
+- Ground claims in `RESEARCH_MAP.md`, paper cards, summaries, extracted text, or local PDFs, following the local source priority above.
 - Separate confirmed relations from hypotheses.
 - Do not force all summarized papers into the analysis.
 - Do not update paper summaries unless the user asks.
+- Do not use web sources as primary evidence for papers that are already present locally.
 - When files are created or modified, report changed paths.
