@@ -7,7 +7,7 @@ description: Start a focused research analysis from this paper-reading workspace
 
 Use this skill to begin a focused research analysis from the summarized papers, research map, and paper cards in this workspace.
 
-Work directly as Codex. Do not create API scripts, servers, or file watchers.
+Work directly as the user's research assistant. Do not create API scripts, servers, or file watchers.
 
 ## Paths
 

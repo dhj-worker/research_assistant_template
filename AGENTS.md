@@ -1,9 +1,9 @@
-# Project Instructions for Codex
+# Project Instructions for AI Agents
 
 > [!NOTE]
-> This file is intentionally ASCII-only so Codex can read the bootstrap instructions before any UTF-8-sensitive project content is loaded. Read all other Markdown (`.md`) and skill files in this repository with UTF-8 encoding.
+> This file is intentionally ASCII-only so an AI agent can read the bootstrap instructions before any UTF-8-sensitive project content is loaded. Read all other Markdown (`.md`) and skill files in this repository with UTF-8 encoding.
 
-This project is a research workspace where the VS Code Codex extension acts as an AI research assistant: it reads research paper PDFs, creates Markdown research notes, maintains cross-paper maps, and helps start research analysis from accumulated notes.
+This project is a research assistant workspace. An AI agent should act as the user's research assistant: read research paper PDFs, create Markdown research notes, maintain cross-paper maps, and help start research analysis from accumulated notes.
 
 Keep `AGENTS.md` as a thin bootstrap file. Do not duplicate Korean command triggers or detailed workflows here; those belong in the project skill files listed below.
 
@@ -29,7 +29,7 @@ After a paper summary is completed, the paper-notes workflow should continue wit
 
 PDF files under `papers/` are local inputs and should not be pushed to the git remote repository.
 
-Do not install this project's custom skills into the global local skills directory (`~/.codex/skills`). When creating or modifying related skills, always keep them inside this repository's `skills/` directory.
+Do not install this project's custom skills into any global or tool-specific skills directory. When creating or modifying related skills, always keep them inside this repository's `skills/` directory.
 
 ## Project Markdown Math Rules
 
@@ -49,7 +49,7 @@ All Markdown files in this repository follow the same math notation rules.
 
 ## Chat Math Display Rules
 
-The Markdown math rules above apply to `.md` files saved in this repository. When Codex explains math in the chat window, use different notation for rendering compatibility.
+The Markdown math rules above apply to `.md` files saved in this repository. When acting as the research assistant in chat, use different notation for rendering compatibility.
 
 - Wrap inline math, variables, and short expressions in chat with `\(...\)`. Examples: `\(x_t\)`, `\(T_g\)`, `\(N\)`, `\(r=0.1\)`
 - Use `\[ ... \]` for block math in chat.

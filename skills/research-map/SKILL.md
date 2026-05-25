@@ -7,7 +7,7 @@ description: Maintain this project's cross-paper research map in summary/RESEARC
 
 Use this skill for maintaining `summary/RESEARCH_MAP.md` and the per-paper card files under `summary/research_cards/` in this local paper-reading workspace.
 
-Work directly as Codex. Do not create API scripts, servers, or file watchers.
+Work directly as the user's research assistant. Do not create API scripts, servers, or file watchers.
 
 ## Paths
 

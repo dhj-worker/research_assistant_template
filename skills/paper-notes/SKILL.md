@@ -15,7 +15,7 @@ Use this skill for the local workspace:
 - Extracted text cache: `extracted_text/<stem>/full.txt`
 - Optional template: `templates/paper_summary.md`
 
-Work directly as Codex. Do not create API scripts, servers, or file watchers.
+Work directly as the user's research assistant. Do not create API scripts, servers, or file watchers.
 
 ## Encoding
 

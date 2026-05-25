@@ -1,15 +1,12 @@
-# Research Workspace with an AI Agent
+# Research Assistant Workspace
 
-이 저장소는 AI 에이전트가 연구 조수로서 사용자와 함께 논문을 읽고, 연구 노트를 만들고, 논문 간 관계와 연구 방향을 발전시키는 작업 공간입니다. VS Code Codex extension을 사용하며, 별도 API 키나 Python 스크립트는 사용하지 않습니다.
-
-> [!NOTE]
-> 이 저장소의 Markdown(`.md`) 파일을 읽을 때는 UTF-8 인코딩을 사용합니다.
+이 저장소는 AI 에이전트를 연구 조수로 활용해 사용자와 함께 논문을 읽고, 연구 노트를 만들고, 논문 간 관계와 연구 방향을 발전시키는 작업 공간입니다. 특정 AI 에이전트나 편집기 확장을 전제로 하지 않으며, 별도 API 키나 Python 스크립트 없이 로컬 파일과 Markdown을 중심으로 사용할 수 있습니다.
 
 ## 주요 사용 방식
 
 ### 논문 정리
 
-새 PDF를 읽고 논문별 연구 노트를 만들 때 사용합니다. 먼저 정리할 PDF를 `papers/` 폴더에 넣은 뒤 Codex에게 다음처럼 요청합니다.
+새 PDF를 읽고 논문별 연구 노트를 만들 때 사용합니다. 먼저 정리할 PDF를 `papers/` 폴더에 넣은 뒤 연구 조수에게 다음처럼 요청합니다.
 
 ```text
 새 논문 정리
@@ -21,7 +18,7 @@
 
 `papers/*.pdf`는 git에 올리지 않도록 설정되어 있습니다. 원본 PDF는 repository에 포함되지 않으므로, OneDrive, Google Drive 같은 드라이브 연동 폴더로 관리하는 것을 권장합니다.
 
-논문 정리가 끝나면 Codex는 요약, 인덱스, 연구 지도, 논문 카드 등 필요한 산출물을 갱신하고 git에 commit/push합니다.
+논문 정리가 끝나면 연구 조수는 요약, 인덱스, 연구 지도, 논문 카드 등 필요한 산출물을 갱신하고 git에 commit/push합니다.
 
 주요 산출물:
 
@@ -63,7 +60,7 @@
 
 ## 폴더 구조
 
-- `AGENTS.md`: Codex가 이 프로젝트에서 어떤 스킬을 써야 하는지 알려주는 진입점
+- `AGENTS.md`: AI 에이전트가 연구 조수 역할과 프로젝트 작업 규칙을 찾기 위한 진입점
 - `skills/paper-notes/`: 논문 정리와 논문 대화 규칙
 - `skills/research-map/`: 논문 카드와 연구 관계 지도 갱신 규칙
 - `skills/research-start/`: 특정 논문/주제로 연구 분석을 시작하는 규칙
