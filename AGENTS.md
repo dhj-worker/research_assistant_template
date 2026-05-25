@@ -1,94 +1,61 @@
 # Project Instructions for Codex
 
-이 프로젝트는 VS Code Codex extension으로 논문 PDF를 읽고 Markdown 연구 노트를 만드는 작업 공간이다.
+> [!NOTE]
+> This file is intentionally ASCII-only so Codex can read the bootstrap instructions before any UTF-8-sensitive project content is loaded. Read all other Markdown (`.md`) and skill files in this repository with UTF-8 encoding.
 
-논문 정리와 논문 대화 작업의 세부 규칙은 `skills/paper-notes/SKILL.md`를 단일 source of truth로 삼는다.
+This project is a research workspace where the VS Code Codex extension acts as an AI research assistant: it reads research paper PDFs, creates Markdown research notes, maintains cross-paper maps, and helps start research analysis from accumulated notes.
 
-논문 간 관계 지도와 연구 흐름 메모의 세부 규칙은 `skills/research-map/SKILL.md`를 단일 source of truth로 삼는다.
+Keep `AGENTS.md` as a thin bootstrap file. Do not duplicate Korean command triggers or detailed workflows here; those belong in the project skill files listed below.
 
-특정 논문이나 주제로 연구 분석을 시작하는 세부 규칙은 `skills/research-start/SKILL.md`를 단일 source of truth로 삼는다.
+## Skill Sources of Truth
 
-이 프로젝트의 커스텀 스킬은 전역 로컬 스킬 폴더(`~/.codex/skills`)에 설치하지 않는다. 앞으로 관련 스킬을 만들거나 수정할 때는 반드시 이 저장소의 `skills/` 폴더 안에 둔다.
+- Paper summarization and paper discussion workflows: `skills/paper-notes/SKILL.md`
+- Cross-paper relationship maps and research-flow notes: `skills/research-map/SKILL.md`
+- Starting research analysis from a specific paper or topic: `skills/research-start/SKILL.md`
 
-## 기본 폴더
+If a relevant skill is not automatically loaded in the current session, read the corresponding `SKILL.md` file directly with UTF-8 encoding and follow its procedure.
 
-- 입력 PDF: `papers/`
-- 요약 Markdown: `summary/`
-- 연구 지도: `summary/RESEARCH_MAP.md`
-- 논문 카드: `summary/research_cards/`
-- 연구 진행 노트: `summary/research_threads/`
-- 템플릿: `templates/paper_summary.md`
-- 프로젝트 스킬: `skills/paper-notes/`, `skills/research-map/`, `skills/research-start/`
+After a paper summary is completed, the paper-notes workflow should continue with the research-map workflow so `summary/RESEARCH_MAP.md` and the relevant paper card stay up to date.
 
-`papers/`는 로컬 연동 폴더라 git remote repository에 push되지 않는다.
+## Default Folders
 
-## 프로젝트 Markdown 수식 규칙
+- Input PDFs: `papers/`
+- Summary Markdown files: `summary/`
+- Research map: `summary/RESEARCH_MAP.md`
+- Paper cards: `summary/research_cards/`
+- Research thread notes: `summary/research_threads/`
+- Template: `templates/paper_summary.md`
+- Project skills: `skills/paper-notes/`, `skills/research-map/`, `skills/research-start/`
 
-이 저장소의 모든 Markdown 파일은 같은 수식 표기 규칙을 따른다.
+PDF files under `papers/` are local inputs and should not be pushed to the git remote repository.
 
-- Inline 수식, 변수, 짧은 표현은 `$...$`로 감싼다. 예: `$x_t$`, `$T_g$`, `$N$`, `$r=0.1$`
-- 수학 변수나 수식에는 code span을 쓰지 않는다. Code span은 파일 경로, 명령어, literal identifier, 코드/텍스트 값에만 사용한다.
-- 중요한 식, 여러 줄 유도, aligned expression, inline으로 읽기 어려운 식은 block math로 작성한다.
-- Block math는 `$$ ... $$`를 사용하고, 여는 `$$`와 닫는 `$$`는 각각 독립된 줄에 둔다.
-- Block math에 `\[ ... \]`는 사용하지 않는다.
-- Inline math에 `\( ... \)`는 사용하지 않는다.
-- `$`와 `\[`를 섞지 않는다.
-- `=`만 단독 줄에 남기지 말고, 필요하면 `aligned`를 사용한다.
-- 수식은 Markdown code block 안에 넣지 않는다.
-- LaTeX backslash는 한 번만 쓴다.
-- 벡터와 행렬은 가능하면 표준 LaTeX 표기, 예를 들어 `\mathbf{x}`와 `\begin{bmatrix} ... \end{bmatrix}`를 사용한다.
+Do not install this project's custom skills into the global local skills directory (`~/.codex/skills`). When creating or modifying related skills, always keep them inside this repository's `skills/` directory.
 
-## 대화창 수식 표시 규칙
+## Project Markdown Math Rules
 
-위 Markdown 수식 규칙은 저장소에 저장되는 `.md` 파일에 적용한다. Codex가 사용자와 대화창에서 설명할 때는 렌더링 호환성을 위해 다른 표기를 사용한다.
+All Markdown files in this repository follow the same math notation rules.
 
-- 대화창의 inline 수식, 변수, 짧은 표현은 `\(...\)`로 감싼다. 예: `\(x_t\)`, `\(T_g\)`, `\(N\)`, `\(r=0.1\)`
-- 대화창의 block math는 `\[ ... \]`를 사용한다.
-- 대화창에서는 `$...$`와 `$$ ... $$`를 쓰지 않는다.
-- 저장소 Markdown 파일을 만들거나 수정할 때는 여전히 위의 프로젝트 Markdown 수식 규칙을 따른다.
+- Wrap inline math, variables, and short expressions with `$...$`. Examples: `$x_t$`, `$T_g$`, `$N$`, `$r=0.1$`
+- Do not use code spans for mathematical variables or equations. Use code spans only for file paths, commands, literal identifiers, and code/text values.
+- Use block math for important equations, multi-line derivations, aligned expressions, or equations that are hard to read inline.
+- Use `$$ ... $$` for block math, with opening `$$` and closing `$$` each on their own line.
+- Do not use `\[ ... \]` for block math.
+- Do not use `\( ... \)` for inline math.
+- Do not mix `$` notation with `\[` notation.
+- Do not leave `=` alone on its own line; use `aligned` when needed.
+- Do not put equations inside Markdown code blocks.
+- Use a single LaTeX backslash.
+- Prefer standard LaTeX notation for vectors and matrices, such as `\mathbf{x}` and `\begin{bmatrix} ... \end{bmatrix}`.
 
-## 작업 규칙
+## Chat Math Display Rules
 
-사용자가 다음과 같은 요청을 하면 `paper-notes` 스킬을 사용한다.
+The Markdown math rules above apply to `.md` files saved in this repository. When Codex explains math in the chat window, use different notation for rendering compatibility.
 
-- `새 논문 정리`
-- `논문 정리`
-- `PDF 정리`
-- `새 PDF`
-- `요약해줘`
-- `papers 처리`
-- `<keyword> 논문 대화`
+- Wrap inline math, variables, and short expressions in chat with `\(...\)`. Examples: `\(x_t\)`, `\(T_g\)`, `\(N\)`, `\(r=0.1\)`
+- Use `\[ ... \]` for block math in chat.
+- Do not use `$...$` or `$$ ... $$` in chat.
+- When creating or editing repository Markdown files, still follow the project Markdown math rules above.
 
-스킬이 현재 세션에서 자동 로드되지 않는 경우, 이 저장소의 `skills/paper-notes/SKILL.md`를 직접 읽고 그 절차를 따른다.
+## Reporting
 
-사용자가 다음과 같은 요청을 하면 `research-map` 스킬을 사용한다.
-
-- `research-map`
-- `리서치맵`
-- `연구 지도`
-- `연구 흐름`
-- `관계 그래프`
-- `<keyword> 관계 추적`
-- `<keyword> 연구 흐름`
-- `논문 카드 추가`
-- `누락 카드 추가`
-
-논문 요약이 완료되면 `paper-notes` 스킬은 자동으로 `research-map` 스킬을 이어서 실행하여 `summary/RESEARCH_MAP.md`를 갱신한다.
-
-스킬이 현재 세션에서 자동 로드되지 않는 경우, 이 저장소의 `skills/research-map/SKILL.md`를 직접 읽고 그 절차를 따른다.
-
-사용자가 다음과 같은 요청을 하면 `research-start` 스킬을 사용한다.
-
-- `연구 시작`
-- `<keyword> 연구 시작`
-- `<keyword>로 연구하자`
-- `연구 방향 찾자`
-- `아이디어 발굴`
-- `연구 질문 만들자`
-- `실험 계획 세우자`
-
-사용자의 첫 프롬프트에 연구 초점, 목표, 관점이 충분하면 바로 진행하고, 부족하면 필요한 정보를 간단히 되묻는다.
-
-스킬이 현재 세션에서 자동 로드되지 않는 경우, 이 저장소의 `skills/research-start/SKILL.md`를 직접 읽고 그 절차를 따른다.
-
-파일을 만들거나 수정한 뒤에는 변경한 파일 경로를 사용자에게 알려준다.
+After creating or modifying files, report the changed file paths to the user.
