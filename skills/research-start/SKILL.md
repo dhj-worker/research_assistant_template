@@ -1,6 +1,6 @@
 ---
 name: research-start
-description: Start a focused research analysis from this paper-reading workspace. Use for Korean commands such as "연구 시작", "<keyword> 연구 시작", "<keyword>로 연구하자", "연구 방향 찾자", "아이디어 발굴", "연구 질문 만들자", "실험 계획 세우자", or when the user wants to analyze a specific paper/topic using the existing research map; update or consult summary/RESEARCH_MAP.md and summary/research_cards/ as needed, then derive a local subgraph, comparison axes, tensions, research questions, and a concrete mini-project plan. If the first prompt lacks the necessary focus, ask concise clarification questions before proceeding.
+description: Start a focused research analysis from this paper-reading workspace. Use for Korean commands such as "연구 시작", "<keyword> 연구 시작", "<keyword>로 연구하자", "연구 방향 찾자", "아이디어 발굴", "연구 질문 만들자", "실험 계획 세우자", or when the user wants to analyze a specific paper/topic using the existing research map. Consult summary/RESEARCH_MAP.md and summary/research_cards/ as needed, then derive a local subgraph, comparison axes, tensions, and gaps at the user's requested depth. Do not rush into final research-topic or mini-project recommendations unless the user explicitly asks for idea generation, experiment planning, or a concrete project proposal. If the first prompt lacks the necessary focus, ask concise clarification questions before proceeding.
 ---
 
 # Research Start
@@ -8,6 +8,18 @@ description: Start a focused research analysis from this paper-reading workspace
 Use this skill to begin a focused research analysis from the summarized papers, research map, and paper cards in this workspace.
 
 Work directly as the user's research assistant. Do not create API scripts, servers, or file watchers.
+
+## Collaboration Stance
+
+Research-start work should be paced with the user. Prefer one careful step at a time over a fully automated research agenda.
+
+- Do not get ahead of the user by selecting a final research direction too early.
+- Do not turn every survey or comparison request into mini-project proposals.
+- When the user asks for broad relationship mapping, stop at map, comparison axes, tensions, and open gaps unless they also ask for idea generation or experiment planning.
+- Present candidate directions as possibilities, not recommendations, unless the user asks you to rank or choose.
+- Before narrowing from a broad map to a specific research topic, summarize plausible narrowing lenses and ask the user which one resonates.
+- Keep the user's stated interest and corrections as higher priority than the assistant's inferred preference.
+- Robotics is only one possible perspective. Do not make robotics deployment the default center unless the user asks for it, the active thread is explicitly robotics-focused, or the paper's relevance clearly requires it. When robotics is only one lens, keep it as an optional note rather than the organizing principle.
 
 ## Paths
 
@@ -39,7 +51,7 @@ Do not browse the web for papers that already have local summaries, cards, extra
 ## Writing Profile
 
 - Write primarily in Korean, keeping English technical terms when precise.
-- Treat the user as a Ph.D.-level AI/robotics researcher.
+- Treat the user as a Ph.D.-level AI/3D/robotics researcher, but do not assume robotics is the user's main lens unless stated.
 - Use `확인 필요` instead of guessing.
 - Follow the project Markdown math rules in root `AGENTS.md` when writing files.
 - In chat, follow the root `AGENTS.md` conversation math rules.
@@ -49,14 +61,14 @@ Do not browse the web for papers that already have local summaries, cards, extra
 Proceed immediately if the user's first prompt gives enough information to identify:
 
 - A center paper, method, lineage, or topic.
-- A research goal, such as survey, gap finding, idea generation, experiment planning, implementation direction, or paper-writing support.
+- A research goal, such as survey, relation mapping, gap finding, idea generation, experiment planning, implementation direction, or paper-writing support.
 - A perspective or constraint when relevant, such as robotics deployment, simulation-ready assets, 3D reconstruction, generation prior, metric geometry, physical validity, or available code/data.
 
 Ask concise clarification questions when key information is missing and the choice would change the analysis. Ask at most three questions. Prefer these:
 
 1. 중심 논문/주제는 무엇인가?
 2. 목표는 survey, 연구 아이디어 발굴, 실험 계획, 구현 방향, 논문 작성 중 무엇인가?
-3. 관점은 robotics, representation, reconstruction accuracy, generation prior, physical validity 중 어디에 둘까?
+3. 관점은 representation, reconstruction accuracy, generation prior, benchmark/evaluation, physical validity, robotics 중 어디에 둘까?
 
 If the user gives only a broad command such as `연구 시작`, first inspect `summary/RESEARCH_MAP.md` and ask the user to choose among likely starting points from available cards/themes.
 
@@ -107,7 +119,7 @@ Last updated: YYYY-MM-DD HH:mm
 ## Next Actions
 ```
 
-Keep this file as a working note. Preserve user-written notes and earlier dated analyses.
+Keep this file as a working note. Preserve user-written notes and earlier dated analyses. `Candidate Research Questions`, `Candidate Mini-Projects`, and concrete recommendations are optional sections; include them only when the user asks for them or when the conversation has already agreed to narrow in that direction.
 
 ## Workflow
 
@@ -122,7 +134,7 @@ Examples:
 - Center paper: `ReconViaGen`
 - Topic: `simulation-ready image-to-3D assets`
 - Goal: `research question generation`
-- Perspective: `robotics deployment`
+- Perspective: `reconstruction-generation interface`
 
 ### 2. Update or Consult Research Map
 
@@ -151,7 +163,8 @@ Choose only axes relevant to the user's goal. Typical axes:
 - Representation: mesh, voxel, sparse latent, Gaussian, point map, depth, material/PBR.
 - Prior type: reconstruction prior, generation prior, visual feature prior, geometry extraction prior.
 - Output validity: visual fidelity, metric accuracy, physical plausibility, simulation readiness.
-- Robotics risk: scale, contact, watertightness, material validity, uncertainty, temporal consistency, calibration robustness.
+- Evaluation/deployment risk: scale, topology, material validity, uncertainty, temporal consistency, calibration robustness, domain shift.
+- Robotics-specific risk: contact, collision, affordance, manipulation reliability, closed-loop robustness. Use this axis only when the user asks for a robotics lens or when the task explicitly needs it.
 
 State what is intentionally out of scope for this pass.
 
@@ -175,11 +188,13 @@ Look for cross-paper patterns, not isolated limitations:
 - generative completion vs measurement-grounded reconstruction
 - visual asset quality vs simulation-ready physical asset
 - compact latent vs editability/control
-- benchmark generality vs robot deployment reliability
+- benchmark generality vs deployment reliability
 
 Add only tensions supported by at least two papers or by one paper plus a strong deployment requirement.
 
 ### 7. Convert Gaps to Research Questions
+
+Only do this step when the user asks for research-question generation or when they confirm that they want to narrow from comparison to topic selection. Otherwise, list gaps neutrally and pause for the user's reaction.
 
 Generate 3-5 research questions. Each question should make clear:
 
@@ -191,17 +206,21 @@ Avoid vague questions such as "Can we improve performance?" Prefer testable ques
 
 ### 8. Evaluate Candidate Directions
 
+Only do this step when the user asks for ranking, prioritization, or project selection. Do not score directions immediately after a broad survey unless requested.
+
 Score or rank each question qualitatively on:
 
 - Novelty
 - Feasibility
 - Evidence path
-- Robotics value
+- Value for the user's chosen perspective
 - Risk of being mere engineering integration
 
 Keep the evaluation compact and candid.
 
 ### 9. Reduce to Mini-Project
+
+Only do this step when the user asks for a concrete project plan, experiment plan, or implementation direction. Do not automatically reduce a broad research map into a mini-project.
 
 Select the most promising direction and turn it into a small first project:
 
@@ -223,4 +242,6 @@ If no direction is clearly best, present 2-3 candidates and ask the user to choo
 - Do not force all summarized papers into the analysis.
 - Do not update paper summaries unless the user asks.
 - Do not use web sources as primary evidence for papers that are already present locally.
+- Do not over-center robotics, simulation, or deployment unless the user has chosen that lens.
+- When the user corrects the direction or tone, update the research thread or skill guidance if appropriate before continuing.
 - When files are created or modified, report changed paths.
