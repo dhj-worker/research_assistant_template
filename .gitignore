@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 papers/*.pdf
+extracted_text/**
+!extracted_text/.gitkeep
