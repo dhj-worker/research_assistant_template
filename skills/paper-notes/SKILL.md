@@ -194,6 +194,16 @@ Avoid shallow compression; use headings, bullets, and tables when they clarify t
 
 Follow the project-wide Markdown math rules in root `AGENTS.md`. This skill does not override them.
 
+Before finalizing generated summary tables, check table cells for inline math that contains a raw `|`.
+Do not write table cells such as `$|\delta|$`, because Markdown may treat the bars as column separators.
+Use semantic LaTeX alternatives instead:
+
+- Absolute value: `$\lvert \delta \rvert$`
+- Norm: `$\lVert x \rVert$`
+- Conditional/given bar: `$p(x \mid y)$`
+
+For block equations, avoid naked operator lines that Markdown preview may parse as structure. Prefer `aligned` for multi-line equations; otherwise prefix exposed operator lines inside `$$ ... $$` with `{}`, such as `{}=`, `{}+ x`, or `{}-`.
+
 ## Follow-up Q&A
 
 When the user asks about a summarized paper:

@@ -11,6 +11,10 @@ It rewrites patterns that some web Markdown previews handle poorly:
   \mathrm{Frustum}  ->  \mathrm Frustum
   \mathbf{x}  ->  \mathbf x
   \mathcal{L}  ->  \mathcal L
+  =
+    inside $$...$$ blocks -> {}=
+  + x
+    inside $$...$$ blocks -> {}+ x
 
 In pre-commit mode, if a staged Markdown file also has unstaged changes, the
 script stops instead of accidentally staging unrelated work.
@@ -31,6 +35,10 @@ PATTERNS = (
     (re.compile(r"\\mathbf\{([^{}\r\n]+)\}"), lambda m: f"\\mathbf {m.group(1)}"),
     (re.compile(r"\\mathcal\{([^{}\r\n]+)\}"), lambda m: f"\\mathcal {m.group(1)}"),
 )
+
+DISPLAY_MATH_MARKER = "$$"
+STANDALONE_MATH_OPERATOR = re.compile(r"^(\s*)([=-])(\s*)$")
+LEADING_PLUS_IN_MATH = re.compile(r"^(\s*)\+")
 
 
 def git(args: list[str], *, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[bytes]:
@@ -93,6 +101,7 @@ def rewrite_text(text: str) -> str:
     lines = text.splitlines(keepends=True)
     rewritten: list[str] = []
     in_fence = False
+    in_display_math = False
     fence = ""
 
     for line in lines:
@@ -108,11 +117,20 @@ def rewrite_text(text: str) -> str:
             rewritten.append(line)
             continue
 
+        if stripped.strip() == DISPLAY_MATH_MARKER:
+            in_display_math = not in_display_math
+            rewritten.append(line)
+            continue
+
         if in_fence:
             rewritten.append(line)
             continue
 
         updated = line
+        if in_display_math and not stripped.startswith("{}"):
+            updated = STANDALONE_MATH_OPERATOR.sub(r"\1{}\2\3", updated)
+            updated = LEADING_PLUS_IN_MATH.sub(r"\1{}+", updated)
+
         for pattern, replacement in PATTERNS:
             updated = pattern.sub(replacement, updated)
         rewritten.append(updated)

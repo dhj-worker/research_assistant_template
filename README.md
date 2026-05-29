@@ -35,6 +35,14 @@ chmod +x .githooks/pre-commit
 \mathcal{L}  ->  \mathcal L
 ```
 
+또한 `$$ ... $$` 수식 블록 안에서 Markdown preview가 가로선이나 개조식으로 오해할 수 있는 operator line을 다음처럼 정리합니다.
+
+```text
+=  ->  {}=
++ x  ->  {}+ x
+-  ->  {}-
+```
+
 같은 Markdown 파일에 staged 변경분과 unstaged 변경분이 동시에 있으면 훅이 중단됩니다. 이 경우 원하지 않는 변경이 함께 커밋되지 않도록 해당 파일을 정리한 뒤 다시 커밋하세요.
 
 이미 커밋된 기존 Markdown 파일들을 한 번에 정리하려면 경로를 직접 지정해 스크립트를 실행합니다.

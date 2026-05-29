@@ -42,10 +42,11 @@ All Markdown files in this repository follow the same math notation rules.
 - Do not use `\[ ... \]` for block math.
 - Do not use `\( ... \)` for inline math.
 - Do not mix `$` notation with `\[` notation.
-- Do not leave `=` alone on its own line; use `aligned` when needed.
+- Do not leave `=`, `-`, or lines beginning with `+` exposed at the start of a line inside block math; use `aligned` when needed, or prefix the operator with `{}`.
 - Do not put equations inside Markdown code blocks.
+- In Markdown tables, do not use raw `|` inside inline math. Use `\lvert ... \rvert` for absolute values, `\lVert ... \rVert` for norms, and `\mid` for conditional/given bars.
 - Use a single LaTeX backslash.
-- Prefer standard LaTeX notation for vectors and matrices, such as `\mathbf{x}` and `\begin{bmatrix} ... \end{bmatrix}`.
+- Prefer standard LaTeX notation for vectors and matrices, such as `\mathbf x` and `\begin{bmatrix} ... \end{bmatrix}`.
 
 ## Chat Math Display Rules
 
