@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+try_python() {
+  if "$@" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+    exec "$@" scripts/fix_md_math_preview.py
+  fi
+}
+
+command -v python3 >/dev/null 2>&1 && try_python python3
+command -v python >/dev/null 2>&1 && try_python python
+command -v py >/dev/null 2>&1 && try_python py -3
+
+echo "pre-commit: Python 3 is required to normalize Markdown math preview patterns." >&2
+exit 1

@@ -10,6 +10,41 @@
 
 VS Code로 Markdown 연구 노트를 볼 때는 `Markdown Preview Mermaid Support` 확장 설치를 권장합니다. 연구 지도나 연구 스레드 노트에서 Mermaid 그래프를 사용하면 논문 간 관계와 연구 흐름을 Markdown 안에서 바로 시각화할 수 있습니다.
 
+## Git hook 설정
+
+이 저장소는 Markdown preview 호환성을 위해 커밋 직전에 staged 된 Markdown 파일의 일부 LaTeX 표기를 자동 정리하는 `pre-commit` 훅을 제공합니다.
+
+새 작업 환경에서 한 번씩 다음 명령으로 저장소의 hook 경로를 연결하세요.
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Ubuntu에서는 훅 파일에 실행 권한도 부여합니다.
+
+```bash
+chmod +x .githooks/pre-commit
+```
+
+이후 평소처럼 `git add`와 `git commit`을 실행하면, 커밋 직전에 staged 된 `.md` 파일에서 다음 패턴이 자동 변환됩니다.
+
+```text
+\mathbb{ABC}  ->  \mathbb ABC
+\mathrm{Frustum}  ->  \mathrm Frustum
+\mathbf{x}  ->  \mathbf x
+\mathcal{L}  ->  \mathcal L
+```
+
+같은 Markdown 파일에 staged 변경분과 unstaged 변경분이 동시에 있으면 훅이 중단됩니다. 이 경우 원하지 않는 변경이 함께 커밋되지 않도록 해당 파일을 정리한 뒤 다시 커밋하세요.
+
+이미 커밋된 기존 Markdown 파일들을 한 번에 정리하려면 경로를 직접 지정해 스크립트를 실행합니다.
+
+```bash
+python scripts/fix_md_math_preview.py summary
+```
+
+변경된 파일을 확인한 뒤 평소처럼 `git add`와 `git commit`을 실행하세요.
+
 ## 주요 사용 방식
 
 ### 논문 정리
@@ -72,6 +107,8 @@ VS Code로 Markdown 연구 노트를 볼 때는 `Markdown Preview Mermaid Suppor
 - `skills/paper-notes/`: 논문 정리와 논문 대화 규칙
 - `skills/research-map/`: 논문 카드와 연구 관계 지도 갱신 규칙
 - `skills/research-start/`: 특정 논문/주제로 연구 분석을 시작하는 규칙
+- `.githooks/pre-commit`: Markdown preview 호환성 정리용 Git hook
+- `scripts/fix_md_math_preview.py`: Git hook에서 호출하는 Markdown 자동 정리 스크립트
 - `papers/`: 논문 PDF 폴더
 - `summary/`: Markdown 요약 파일 폴더
 - `summary/research_cards/`: 논문별 연구 카드 폴더
