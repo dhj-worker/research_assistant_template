@@ -46,6 +46,7 @@ All Markdown files in this repository follow the same math notation rules.
 - Do not put equations inside Markdown code blocks.
 - In Markdown tables, do not use raw `|` inside inline math. Use `\lvert ... \rvert` for absolute values, `\lVert ... \rVert` for norms, and `\mid` for conditional/given bars.
 - Use a single LaTeX backslash.
+- Use single-backslash LaTeX commands in Markdown math; for arrows, write `$\rightarrow$`, not `$\\rightarrow$`.
 - Prefer standard LaTeX notation for vectors and matrices, such as `\mathbf x` and `\begin{bmatrix} ... \end{bmatrix}`.
 
 ## Chat Math Display Rules
